@@ -1,0 +1,74 @@
+# Схема манифеста
+
+**Манифест** — структурированный JSON по одному делу: числа, флаги, реквизиты, извлечённые
+из расчёта и доп-контекста. Общий артефакт стыка: **производится** извлечением (шаг 2),
+**потребляется** валидацией (шаг 3) и генерацией (шаг 4).
+
+Отличать от **шаблона** (`templates/document-template-type-A.json`) — тот общий на все
+записки (болванки, порядок блоков) и от дела не зависит.
+
+Принцип: манифест хранит **сырые числа** (`11273.59`), не форматированные строки.
+Оформление («11 273,59 руб.») — задача генератора.
+
+```jsonc
+{
+  "abonent": {
+    "name": "ИП Чебанова Виктория Владимировна",   // null если не найдено
+    "contract_no": null,
+    "contract_date": null,
+    "address": "г. Вилючинск, ул. Строительная, д.6"
+  },
+  "flags": {
+    "calc_method": "pu",            // "pu" | "norm"
+    "is_recalc": true,              // повторный расчёт в связи с поверкой
+    "has_nvcs": true,
+    "nvcs_mode": "p123_4",          // "p123_4" (по умолчанию) | "razdel_13"
+    "k_coefficient": 0.5,           // = sum_nvcs / sum_stoki
+    "has_p203": true,
+    "has_gvs": false,
+    "has_seasonality": false
+  },
+  "pu_list": [                      // если calc_method = "pu"
+    { "object": "кафе Пит-Стоп", "meter_no": "580873119", "poverka_date": null }
+  ],
+  "normativ": {                     // если calc_method = "norm"; иначе null
+    "npa": null, "volume_hvs": null, "volume_gvs": null
+  },
+  "tariffs": [
+    { "date_from": "2025-01-01", "date_to": "2025-06-30",
+      "tariff_hvs": 55.89, "tariff_vo": 94.25, "nds": "without" },   // "with" | "without"
+    { "date_from": "2025-07-01", "date_to": "2025-12-31",
+      "tariff_hvs": 163.13, "tariff_vo": 207.50, "nds": "without" }
+  ],
+  "tariff_npa": "Постановление РСТ Камчатского края № 33-Н от 05.03.2025",
+  "months": [
+    { "month": "2025-04",
+      "V_hvs": 168.092, "sum_hvs": 11273.59,
+      "V_gvs": 0, "V_stoki": 168.092, "sum_stoki": 19011.20,
+      "sum_nvcs": 9505.61, "sum_p203": 38022.41,
+      "month_total": 77812.81 }
+    // ... остальные месяцы
+  ],
+  "example_month": "2025-04",       // выбранный репрезентативный месяц
+  "totals": { "charged": 275509.30, "paid": 0, "balance": 275509.30 },
+  "executor_context": {
+    "ispolnitel": null,             // ФИО, должность — из доп-контекста
+    "object_purpose": null,         // или "DELETE" если исполнитель просил удалить блок
+    "normativ_npa": null,
+    "nvcs_mode_override": null
+  },
+  "issues": {
+    "missing": ["abonent.contract_no", "executor_context.ispolnitel"],
+    "assumption": []                // заполняется валидацией
+  }
+}
+```
+
+## Статусы полей
+- Поле не найдено ни в расчёте, ни в доп-контексте → `null` + запись в `issues.missing`.
+- Поле не прошло валидацию после повтора → запись в `issues.assumption` (значение остаётся
+  как есть, добавляется текст расхождения).
+- Поле не в списках `issues` = `ok`.
+
+Генератор читает `issues` и действует по контракту генерации: `missing` → плейсхолдер;
+`assumption` → значение как есть + комментарий исполнителю.
