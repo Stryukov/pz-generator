@@ -1,0 +1,742 @@
+{
+  "name": "pz-generator — пояснительные записки",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), model, self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), Anthropic API key (HTTP Header Auth, заголовок `x-api-key`).\n3. Узел «HTML→DOCX»: указать свой конвертер (Gotenberg/CloudConvert). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.",
+        "height": 380,
+        "width": 460,
+        "color": 4
+      },
+      "id": "b854e0c1-778d-46f2-9eda-8c51b98fb01d",
+      "name": "README",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Петля повтора\nВалидация не прошла → повторное извлечение с обратной связью (какая проверка/поле не сошлось) → валидация 2 → пометка assumption для оставшихся расхождений. Затем генерация.",
+        "height": 220,
+        "width": 300,
+        "color": 5
+      },
+      "id": "f8c5c692-beba-4f01-aead-0edfe596567f",
+      "name": "NOTE_RETRY",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        720,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "format": "resolved",
+        "options": {}
+      },
+      "id": "007bd0c1-a451-4ada-895b-9194e46ae4b4",
+      "name": "Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        260
+      ],
+      "credentials": {
+        "imap": {
+          "id": "REPLACE_IMAP",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0ae3a3cd-b823-45ca-9b95-c85edf5856f0",
+              "name": "docs_base_url",
+              "value": "https://raw.githubusercontent.com/Stryukov/pz-generator/main/docs",
+              "type": "string"
+            },
+            {
+              "id": "0baa97e5-7b09-4102-9dce-db6057d037bf",
+              "name": "model",
+              "value": "claude-sonnet-4-5",
+              "type": "string"
+            },
+            {
+              "id": "7e3b3b23-9b02-45c2-9640-d68bff0787ad",
+              "name": "anthropic_version",
+              "value": "2023-06-01",
+              "type": "string"
+            },
+            {
+              "id": "942420fe-f512-4d3d-9352-ba89411bdb23",
+              "name": "self_email",
+              "value": "pz-bot@example.com",
+              "type": "string"
+            },
+            {
+              "id": "1ec21a3d-5256-4682-bc71-c40961673c34",
+              "name": "subject_tag",
+              "value": "[ПЗ]",
+              "type": "string"
+            },
+            {
+              "id": "f7fad311-1a20-4b03-8c86-2a85a3d7c7df",
+              "name": "converter_url",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "6351325f-de10-48e7-b436-c38c1b627b0b",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -340,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "6b324aa9-1427-4731-913c-60a28f29db6f",
+              "leftValue": "={{ $json.subject }}",
+              "rightValue": "={{ $('Config').item.json.subject_tag }}",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "bb21e7c0-96b8-43ab-8f42-9c77c79b6cc8",
+              "leftValue": "={{ $json.from }}",
+              "rightValue": "={{ $('Config').item.json.self_email }}",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5d5008fe-2749-486e-a571-d7c321e2566b",
+      "name": "Filter Subject",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b51c1bfa-abec-4c7e-9e1f-a6f3bd427cee",
+      "name": "Ignore",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        100,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Извлекаем расчёт (первый PDF), доп-контекст (тело письма + прочие вложения), метаданные для ответа\nconst item = $input.first();\nconst bin = item.binary || {};\nlet calc_b64 = null, calc_name = null;\nconst extras = [];\nfor (const key of Object.keys(bin)) {\n  const b = bin[key];\n  const isPdf = (b.mimeType||'').includes('pdf') || (b.fileName||'').toLowerCase().endsWith('.pdf');\n  if (isPdf && !calc_b64) { calc_b64 = b.data; calc_name = b.fileName || 'raschet.pdf'; }\n  else { extras.push(b.fileName || key); }\n}\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calc_b64,\n  calc_b64, calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: j.from || '',\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: bin }];\n"
+      },
+      "id": "9f7efaad-8880-47de-97d5-26c5293f23e1",
+      "name": "Prepare Inputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "cdaec385-d92a-4aa2-aafa-66125f9b3d56",
+              "leftValue": "={{ $json.has_calc }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "257062a0-4ef2-4fcc-9e99-13123323037e",
+      "name": "Has Calculation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        320,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').item.json.self_email }}",
+        "toEmail": "={{ $json.from }}",
+        "subject": "=Re: {{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "Здравствуйте!\\n\\nДля подготовки пояснительной записки приложите, пожалуйста, файл расчёта (PDF) и, при необходимости, доп-контекст.\\n\\nСообщение сформировано автоматически.",
+        "options": {
+          "inReplyTo": "={{ $json.messageId }}"
+        }
+      },
+      "id": "4ceacddb-d563-43f6-97fb-6d413a8265ab",
+      "name": "Reply Need Calc",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        540,
+        460
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_SMTP",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Тянем контракты/структуру/схему из репозитория (docs_base_url). Флоу статичен, правки — в .md.\nconst base = $('Config').first().json.docs_base_url.replace(/\\/$/, '');\nasync function get(p){ return await this.helpers.httpRequest({ url: base + '/' + p, json: false }); }\nconst [extraction, schema, spec, generation] = await Promise.all([\n  get.call(this,'01-extraction-contract.md'),\n  get.call(this,'02-manifest-schema.md'),\n  get.call(this,'04-spec-type-A.md'),\n  get.call(this,'05-generation-contract.md')\n]);\nconst j = $input.first().json;\nj.extraction_system = extraction + '\\n\\n---\\n\\n' + schema;\nj.generation_system = spec + '\\n\\n---\\n\\n' + generation;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+      },
+      "id": "38a2e3ac-10d3-49e4-8ed0-a3ef5da34aec",
+      "name": "Load Contracts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "={{ $('Config').item.json.anthropic_version }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\"model\": \"={{ $('Config').item.json.model }}\", \"max_tokens\": 8000, \"system\": \"={{ $json.extraction_system }}\", \"messages\": [{\"role\": \"user\", \"content\": [{\"type\": \"document\", \"source\": {\"type\": \"base64\", \"media_type\": \"application/pdf\", \"data\": \"={{ $json.calc_b64 }}\"}}, {\"type\": \"text\", \"text\": \"=Извлеки данные из приложенного расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\\\\n\\\\nДоп-контекст:\\\\n{{ $json.dop_context }}\"}]}]}) }}",
+        "options": {}
+      },
+      "id": "d83ebdf9-4762-4308-9e62-08765d1740a1",
+      "name": "Extraction Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        260
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ANTHROPIC",
+          "name": "Anthropic x-api-key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Достаём JSON манифеста из ответа Anthropic\nconst resp = $input.first().json;\nlet text = (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest;\ntry { manifest = JSON.parse(text); } catch(e) { manifest = { _parse_error: e.message, _raw: text }; }\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
+      },
+      "id": "1bd34394-e951-4aa6-8c24-a6c31f36d9f5",
+      "name": "Parse Manifest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  const em = m.months.find(x => x.month === m.example_month);\n  const f = m.flags;\n  const t = m.tariffs.find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  const mult = t.nds === 'without' ? 1.2 : 1.0;\n  if (!eq(em.sum_hvs, em.V_hvs * t.tariff_hvs * mult, T.line)) fails.push('1:ХВС');\n  if (em.V_stoki !== em.V_hvs + (f.has_gvs ? em.V_gvs : 0)) fails.push('2:V_stoki');\n  if (!eq(em.sum_stoki, em.V_stoki * t.tariff_vo * mult, T.line)) fails.push('3:стоки');\n  if (f.has_nvcs) {\n    if (!eq(em.sum_nvcs, em.sum_stoki * f.k_coefficient, T.line)) fails.push('4:НВЦС');\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K');\n  }\n  if (f.has_p203 && !eq(em.sum_p203, em.sum_stoki * 2, T.line)) fails.push('5:п203');\n  let comp = em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? em.sum_p203 : 0);\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца');\n  const sm = m.months.reduce((s, x) => s + x.month_total, 0);\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено');\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток');\n} catch(e) { fails.push('validator_error:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+      },
+      "id": "e970f526-b13a-4383-a5ea-a13201450d79",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "3b521ece-bd8a-4a10-8509-1c2f9500fea0",
+              "leftValue": "={{ $json.passed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2c65ed16-afd4-4382-a720-2550c711c518",
+      "name": "Passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "={{ $('Config').item.json.anthropic_version }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Config').item.json.model, max_tokens: 8000, system: $('Load Contracts').item.json.extraction_system, messages: [{ role:'user', content: [ { type:'document', source:{ type:'base64', media_type:'application/pdf', data: $('Prepare Inputs').item.json.calc_b64 } }, { type:'text', text: 'Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: ' + JSON.stringify($json.fails) + '. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\\n\\nДоп-контекст:\\n' + $('Load Contracts').item.json.dop_context } ] }] }) }}",
+        "options": {}
+      },
+      "id": "92225339-97e1-4f90-8f8e-156850d7dde2",
+      "name": "Re-extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        460
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ANTHROPIC",
+          "name": "Anthropic x-api-key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nlet text = (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest; try { manifest = JSON.parse(text); } catch(e){ manifest = { _parse_error:e.message, _raw:text }; }\nconst prev = $('Parse Manifest').first().json;\nreturn [{ json: { manifest, generation_system: prev.generation_system, from: prev.from,\n  subject: prev.subject, messageId: prev.messageId, calc_name: prev.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
+      },
+      "id": "f95350bd-975d-48f7-84ef-0a6fa45dbbf0",
+      "name": "Parse Manifest 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  const em = m.months.find(x => x.month === m.example_month);\n  const f = m.flags;\n  const t = m.tariffs.find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  const mult = t.nds === 'without' ? 1.2 : 1.0;\n  if (!eq(em.sum_hvs, em.V_hvs * t.tariff_hvs * mult, T.line)) fails.push('1:ХВС');\n  if (em.V_stoki !== em.V_hvs + (f.has_gvs ? em.V_gvs : 0)) fails.push('2:V_stoki');\n  if (!eq(em.sum_stoki, em.V_stoki * t.tariff_vo * mult, T.line)) fails.push('3:стоки');\n  if (f.has_nvcs) {\n    if (!eq(em.sum_nvcs, em.sum_stoki * f.k_coefficient, T.line)) fails.push('4:НВЦС');\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K');\n  }\n  if (f.has_p203 && !eq(em.sum_p203, em.sum_stoki * 2, T.line)) fails.push('5:п203');\n  let comp = em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? em.sum_p203 : 0);\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца');\n  const sm = m.months.reduce((s, x) => s + x.month_total, 0);\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено');\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток');\n} catch(e) { fails.push('validator_error:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+      },
+      "id": "b63e1d18-35fe-4f04-9ba0-f11a60b50d48",
+      "name": "Validate 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Оставшиеся расхождения -> issues.assumption (значение как есть + текст для исполнителя)\nconst j = $input.first().json;\nconst m = j.manifest;\nm.issues = m.issues || { missing: [], assumption: [] };\nm.issues.assumption = m.issues.assumption || [];\nfor (const code of (j.fails || [])) {\n  m.issues.assumption.push({ check: code, month: m.example_month, note: 'Расхождение при валидации после повтора — проверьте вручную' });\n}\nj.manifest = m;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+      },
+      "id": "adf14e8c-6e2e-4e9e-8ade-b0ae64e27d59",
+      "name": "Mark Assumptions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "={{ $('Config').item.json.anthropic_version }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $('Config').item.json.model, max_tokens: 8000, system: $json.generation_system, messages: [{ role:'user', content: 'Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}.\\n\\nМанифест:\\n' + JSON.stringify($json.manifest) }] }) }}",
+        "options": {}
+      },
+      "id": "cc536bcc-a7ee-44f7-867f-e95cbc06428c",
+      "name": "Generation Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1860,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ANTHROPIC",
+          "name": "Anthropic x-api-key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nlet text = (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\nconst carry = $input.first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+      },
+      "id": "ee803ca7-20f1-4493-8491-3391692f0e71",
+      "name": "Parse Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').item.json.converter_url }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "files",
+              "inputDataFieldName": "zapiska"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1c290017-6a6d-46eb-b807-e9712f93c02d",
+      "name": "HTML to DOCX",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2300,
+        200
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Config').item.json.self_email }}",
+        "toEmail": "={{ $json.from }}",
+        "subject": "=Re: {{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "=Здравствуйте!\\n\\nВо вложении — черновик пояснительной записки. Проверьте плейсхолдеры «‹…›» и отмеченные ниже пункты перед подачей.\\n\\n{{ $json.executor_notes }}\\n\\nСообщение сформировано автоматически.",
+        "attachments": "zapiska",
+        "options": {
+          "inReplyTo": "={{ $json.messageId }}"
+        }
+      },
+      "id": "37379618-04d8-4b88-a26c-9c12bbc33b94",
+      "name": "Reply With Zapiska",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2520,
+        200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_SMTP",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Filter Subject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Subject": {
+      "main": [
+        [
+          {
+            "node": "Prepare Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ignore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Inputs": {
+      "main": [
+        [
+          {
+            "node": "Has Calculation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Calculation": {
+      "main": [
+        [
+          {
+            "node": "Load Contracts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply Need Calc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Contracts": {
+      "main": [
+        [
+          {
+            "node": "Extraction Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Manifest": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Passed?": {
+      "main": [
+        [
+          {
+            "node": "Generation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Re-extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-extract": {
+      "main": [
+        [
+          {
+            "node": "Parse Manifest 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Manifest 2": {
+      "main": [
+        [
+          {
+            "node": "Validate 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate 2": {
+      "main": [
+        [
+          {
+            "node": "Mark Assumptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Assumptions": {
+      "main": [
+        [
+          {
+            "node": "Generation Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generation Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Output": {
+      "main": [
+        [
+          {
+            "node": "HTML to DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML to DOCX": {
+      "main": [
+        [
+          {
+            "node": "Reply With Zapiska",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
