@@ -20,6 +20,9 @@
    - Anthropic — HTTP Header Auth с заголовком `x-api-key` = ваш ключ (все агенты).
 3. **HTML→DOCX** — узел отключён по умолчанию: записка вложится как HTML. Чтобы получать DOCX,
    включите узел и задайте `converter_url` (Gotenberg/CloudConvert/свой сервис).
+   Для self-hosted рекомендуется **Gotenberg** отдельным контейнером рядом (данные не уходят
+   наружу — важно для судебных документов); тогда
+   `converter_url = http://gotenberg:3000/forms/libreoffice/convert`.
 
 ## Схема
 ```
