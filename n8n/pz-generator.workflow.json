@@ -3,9 +3,9 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), model, self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), Anthropic API key (HTTP Header Auth, заголовок `x-api-key`).\n3. Узел «HTML→DOCX»: указать свой конвертер (Gotenberg/CloudConvert). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.",
-        "height": 380,
-        "width": 460,
+        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), Ollama (локальный сервер Gemma).\n3. Узел «Gemma (Ollama)»: модель задана жёстко (`gemma3`) — при смене правьте здесь.\n4. Узел «HTML→DOCX»: указать свой конвертер (для self-hosted — Gotenberg). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.\n\nРасчёт (PDF; в будущем xlsx) не передаётся модели документом — узел «Extract Calc Text» извлекает текст, он и уходит в промпт (Gemma — текстовая модель).",
+        "height": 420,
+        "width": 480,
         "color": 4
       },
       "id": "b854e0c1-778d-46f2-9eda-8c51b98fb01d",
@@ -14,7 +14,7 @@
       "typeVersion": 1,
       "position": [
         -560,
-        -200
+        -220
       ]
     },
     {
@@ -29,8 +29,8 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        720,
-        40
+        1500,
+        620
       ]
     },
     {
@@ -61,18 +61,6 @@
               "id": "0ae3a3cd-b823-45ca-9b95-c85edf5856f0",
               "name": "docs_base_url",
               "value": "https://raw.githubusercontent.com/Stryukov/pz-generator/main/docs",
-              "type": "string"
-            },
-            {
-              "id": "0baa97e5-7b09-4102-9dce-db6057d037bf",
-              "name": "model",
-              "value": "claude-sonnet-4-5",
-              "type": "string"
-            },
-            {
-              "id": "7e3b3b23-9b02-45c2-9640-d68bff0787ad",
-              "name": "anthropic_version",
-              "value": "2023-06-01",
               "type": "string"
             },
             {
@@ -124,15 +112,6 @@
                 "type": "string",
                 "operation": "contains"
               }
-            },
-            {
-              "id": "bb21e7c0-96b8-43ab-8f42-9c77c79b6cc8",
-              "leftValue": "={{ $json.from }}",
-              "rightValue": "={{ $('Config').item.json.self_email }}",
-              "operator": {
-                "type": "string",
-                "operation": "notContains"
-              }
             }
           ]
         },
@@ -160,7 +139,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Разбор вложений: выбираем PDF-расчёт (не пени/поручение/пояснительную), доп-контекст, метаданные.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst pdfs = keys.filter(isPdf);\nconst candidates = pdfs.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// предпочитаем «расчёт задолженности»; иначе первый не-исключённый PDF\nconst preferred = candidates.find(k => lower(k).includes('расч') && lower(k).includes('задолж'));\nconst calcKey = preferred || candidates[0] || null;\nlet calc_b64 = null, calc_name = null;\nif (calcKey) {\n  // getBinaryDataBuffer работает при любом режиме хранения бинарников (in-memory/filesystem/S3)\n  const buf = await this.helpers.getBinaryDataBuffer(0, calcKey);\n  calc_b64 = buf.toString('base64');\n  calc_name = nameOf(calcKey);\n}\n// прочие вложения (всё, кроме выбранного расчёта) — в доп-контекст\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calc_b64,\n  calc_b64, calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: j.from || '',\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: bin }];\n"
+        "jsCode": "// Разбор вложений: выбираем PDF-расчёт под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst pdfs = keys.filter(isPdf);\nconst candidates = pdfs.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// предпочитаем «расчёт задолженности»; иначе первый не-исключённый PDF\nconst preferred = candidates.find(k => lower(k).includes('расч') && lower(k).includes('задолж'));\nconst calcKey = preferred || candidates[0] || null;\n// выбранный расчёт кладём под стабильный ключ `calc` (его читает Extract Calc Text)\nconst outBin = {};\nlet calc_name = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: j.from || '',\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
       },
       "id": "9f7efaad-8880-47de-97d5-26c5293f23e1",
       "name": "Prepare Inputs",
@@ -244,53 +223,72 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "anthropic-version",
-              "value": "={{ $('Config').item.json.anthropic_version }}"
-            },
-            {
-              "name": "content-type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\"model\": \"={{ $('Config').item.json.model }}\", \"max_tokens\": 8000, \"system\": \"={{ $json.extraction_system }}\", \"messages\": [{\"role\": \"user\", \"content\": [{\"type\": \"document\", \"source\": {\"type\": \"base64\", \"media_type\": \"application/pdf\", \"data\": \"={{ $json.calc_b64 }}\"}}, {\"type\": \"text\", \"text\": \"=Извлеки данные из приложенного расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\\\\n\\\\nДоп-контекст:\\\\n{{ $json.dop_context }}\"}]}]}) }}",
-        "options": {}
+        "operation": "pdf",
+        "binaryPropertyName": "calc",
+        "options": {
+          "joinPages": true
+        }
       },
-      "id": "d83ebdf9-4762-4308-9e62-08765d1740a1",
-      "name": "Extraction Agent",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "a1c0f7e2-3b44-4d8e-9f21-7c6e5a0b1d33",
+      "name": "Extract Calc Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
       "position": [
         760,
         260
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gemma3",
+        "options": {}
+      },
+      "id": "c2d1e8f4-5a66-4c9a-b0e3-1f2a3b4c5d6e",
+      "name": "Gemma (Ollama)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        1180,
+        560
       ],
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_ANTHROPIC",
-          "name": "Anthropic x-api-key"
+        "ollamaApi": {
+          "id": "REPLACE_OLLAMA",
+          "name": "Ollama account"
         }
       }
     },
     {
       "parameters": {
-        "jsCode": "// Достаём JSON манифеста из ответа Anthropic\nconst resp = $input.first().json;\nlet text = (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest;\ntry { manifest = JSON.parse(text); } catch(e) { manifest = { _parse_error: e.message, _raw: text }; }\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
+        "promptType": "define",
+        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\n\nРасчёт:\n{{ $('Extract Calc Text').item.json.text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $('Load Contracts').item.json.extraction_system }}"
+            }
+          ]
+        }
+      },
+      "id": "d83ebdf9-4762-4308-9e62-08765d1740a1",
+      "name": "Extraction Agent",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Достаём JSON манифеста из ответа модели (Basic LLM Chain → .text)\nconst resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest;\ntry { manifest = JSON.parse(text); } catch(e) { manifest = { _parse_error: e.message, _raw: text }; }\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "1bd34394-e951-4aa6-8c24-a6c31f36d9f5",
       "name": "Parse Manifest",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        980,
+        1180,
         260
       ]
     },
@@ -303,7 +301,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
+        1380,
         260
       ]
     },
@@ -335,59 +333,41 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1420,
+        1580,
         260
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
+        "promptType": "define",
+        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\n\nРасчёт:\n{{ $('Extract Calc Text').item.json.text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "messages": {
+          "messageValues": [
             {
-              "name": "anthropic-version",
-              "value": "={{ $('Config').item.json.anthropic_version }}"
-            },
-            {
-              "name": "content-type",
-              "value": "application/json"
+              "message": "={{ $('Load Contracts').item.json.extraction_system }}"
             }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: $('Config').item.json.model, max_tokens: 8000, system: $('Load Contracts').item.json.extraction_system, messages: [{ role:'user', content: [ { type:'document', source:{ type:'base64', media_type:'application/pdf', data: $('Prepare Inputs').item.json.calc_b64 } }, { type:'text', text: 'Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: ' + JSON.stringify($json.fails) + '. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\\n\\nДоп-контекст:\\n' + $('Load Contracts').item.json.dop_context } ] }] }) }}",
-        "options": {}
+        }
       },
       "id": "92225339-97e1-4f90-8f8e-156850d7dde2",
       "name": "Re-extract",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
       "position": [
-        1420,
+        1580,
         460
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_ANTHROPIC",
-          "name": "Anthropic x-api-key"
-        }
-      }
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const resp = $input.first().json;\nlet text = (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest; try { manifest = JSON.parse(text); } catch(e){ manifest = { _parse_error:e.message, _raw:text }; }\nconst prev = $('Parse Manifest').first().json;\nreturn [{ json: { manifest, generation_system: prev.generation_system, from: prev.from,\n  subject: prev.subject, messageId: prev.messageId, calc_name: prev.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
+        "jsCode": "const resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest; try { manifest = JSON.parse(text); } catch(e){ manifest = { _parse_error:e.message, _raw:text }; }\nconst prev = $('Parse Manifest').first().json;\nreturn [{ json: { manifest, generation_system: prev.generation_system, from: prev.from,\n  subject: prev.subject, messageId: prev.messageId, calc_name: prev.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "f95350bd-975d-48f7-84ef-0a6fa45dbbf0",
       "name": "Parse Manifest 2",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1640,
+        1780,
         460
       ]
     },
@@ -400,7 +380,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1860,
+        1980,
         460
       ]
     },
@@ -413,59 +393,41 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2080,
+        2180,
         460
       ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
+        "promptType": "define",
+        "text": "=Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
+        "messages": {
+          "messageValues": [
             {
-              "name": "anthropic-version",
-              "value": "={{ $('Config').item.json.anthropic_version }}"
-            },
-            {
-              "name": "content-type",
-              "value": "application/json"
+              "message": "={{ $json.generation_system }}"
             }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: $('Config').item.json.model, max_tokens: 8000, system: $json.generation_system, messages: [{ role:'user', content: 'Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}.\\n\\nМанифест:\\n' + JSON.stringify($json.manifest) }] }) }}",
-        "options": {}
+        }
       },
       "id": "cc536bcc-a7ee-44f7-867f-e95cbc06428c",
       "name": "Generation Agent",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
       "position": [
-        1860,
+        1980,
         200
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_ANTHROPIC",
-          "name": "Anthropic x-api-key"
-        }
-      }
+      ]
     },
     {
       "parameters": {
-        "jsCode": "const resp = $input.first().json;\nlet text = (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\nconst carry = $input.first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+        "jsCode": "const resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\nconst carry = $input.first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
       },
       "id": "ee803ca7-20f1-4493-8491-3391692f0e71",
       "name": "Parse Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2080,
+        2180,
         200
       ]
     },
@@ -491,7 +453,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2300,
+        2380,
         200
       ],
       "disabled": true
@@ -513,7 +475,7 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        2520,
+        2580,
         200
       ],
       "credentials": {
@@ -598,8 +560,40 @@
       "main": [
         [
           {
+            "node": "Extract Calc Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Calc Text": {
+      "main": [
+        [
+          {
             "node": "Extraction Agent",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemma (Ollama)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extraction Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Re-extract",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Generation Agent",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]
