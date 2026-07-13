@@ -139,7 +139,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Разбор вложений: выбираем PDF-расчёт под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst pdfs = keys.filter(isPdf);\nconst candidates = pdfs.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// предпочитаем «расчёт задолженности»; иначе первый не-исключённый PDF\nconst preferred = candidates.find(k => lower(k).includes('расч') && lower(k).includes('задолж'));\nconst calcKey = preferred || candidates[0] || null;\n// выбранный расчёт кладём под стабильный ключ `calc` (его читает Extract Calc Text)\nconst outBin = {};\nlet calc_name = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: j.from || '',\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
+        "jsCode": "// Разбор вложений: выбираем PDF-расчёт под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst pdfs = keys.filter(isPdf);\nconst candidates = pdfs.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// предпочитаем «расчёт задолженности»; иначе первый не-исключённый PDF\nconst preferred = candidates.find(k => lower(k).includes('расч') && lower(k).includes('задолж'));\nconst calcKey = preferred || candidates[0] || null;\n// выбранный расчёт кладём под стабильный ключ `calc` (его читает Extract Calc Text)\nconst outBin = {};\nlet calc_name = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: (j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || (typeof j.from === 'string' ? j.from : ''),\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
       },
       "id": "9f7efaad-8880-47de-97d5-26c5293f23e1",
       "name": "Prepare Inputs",
@@ -188,8 +188,9 @@
         "toEmail": "={{ $json.from }}",
         "subject": "=Re: {{ $json.subject }}",
         "emailFormat": "text",
-        "text": "Здравствуйте!\\n\\nДля подготовки пояснительной записки приложите, пожалуйста, файл расчёта (PDF) и, при необходимости, доп-контекст.\\n\\nСообщение сформировано автоматически.",
+        "text": "Здравствуйте!\n\nДля подготовки пояснительной записки приложите, пожалуйста, файл расчёта (PDF) и, при необходимости, доп-контекст.\n\nСообщение сформировано автоматически.",
         "options": {
+          "appendAttribution": false,
           "inReplyTo": "={{ $json.messageId }}"
         }
       },
@@ -236,6 +237,9 @@
       "name": "Fetch Extraction",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "position": [
         540,
         160
@@ -256,6 +260,9 @@
       "name": "Fetch Schema",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "position": [
         660,
         160
@@ -276,6 +283,9 @@
       "name": "Fetch Spec",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "position": [
         780,
         160
@@ -296,6 +306,9 @@
       "name": "Fetch Generation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "position": [
         780,
         360
@@ -320,8 +333,13 @@
     },
     {
       "parameters": {
-        "model": "gemma3",
-        "options": {}
+        "model": "gemma3:27b",
+        "options": {
+          "temperature": 0,
+          "frequencyPenalty": 0,
+          "keepAlive": "30m",
+          "numCtx": 16384
+        }
       },
       "id": "c2d1e8f4-5a66-4c9a-b0e3-1f2a3b4c5d6e",
       "name": "Gemma (Ollama)",
@@ -500,7 +518,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\nconst carry = $input.first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+        "jsCode": "const resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\n// from/subject/messageId берём из Parse Manifest (в выходе модели их нет)\nconst carry = $('Parse Manifest').first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
       },
       "id": "ee803ca7-20f1-4493-8491-3391692f0e71",
       "name": "Parse Output",
@@ -544,9 +562,10 @@
         "toEmail": "={{ $json.from }}",
         "subject": "=Re: {{ $json.subject }}",
         "emailFormat": "text",
-        "text": "=Здравствуйте!\\n\\nВо вложении — черновик пояснительной записки. Проверьте плейсхолдеры «‹…›» и отмеченные ниже пункты перед подачей.\\n\\n{{ $json.executor_notes }}\\n\\nСообщение сформировано автоматически.",
-        "attachments": "zapiska",
+        "text": "=Здравствуйте!\n\nВо вложении — черновик пояснительной записки. Проверьте плейсхолдеры «‹…›» и отмеченные ниже пункты перед подачей.\n\n{{ $json.executor_notes }}\n\nСообщение сформировано автоматически.",
         "options": {
+          "attachments": "zapiska",
+          "appendAttribution": false,
           "inReplyTo": "={{ $json.messageId }}"
         }
       },

@@ -25,6 +25,13 @@
 - Флоу: контракты грузятся четырьмя `HTTP Request`-узлами (`Fetch Extraction/Schema/Spec/
   Generation`), `Load Contracts` только склеивает строки. Причина: `helpers.httpRequest`
   внутри Code-узла виснет в task-runner n8n (таймаут задачи 60 с).
+- Флоу: на `Fetch *`-узлах включён Retry On Fail (транзиентный ECONNRESET от GitHub raw).
+- Флоу: узел `Gemma (Ollama)` — модель `gemma3:27b`, `temperature 0`, `numCtx 16384`,
+  `keepAlive 30m` (numCtx критичен: при дефолтных 2048 длинный системный промпт обрезался).
+- Флоу: исправлена отправка ответа — `from` берётся как адрес (`from.value[0].address`),
+  `from/subject/messageId` в `Parse Output` тянутся из `Parse Manifest`; вложение `zapiska`
+  перенесено в `options.attachments`; в тексте писем реальные переводы строк;
+  `appendAttribution: false`.
 - Флоу: из `Filter Subject` убрана проверка отправителя (защита от петли не нужна в топологии
   отдельного ящика ПЗ); `Prepare Inputs` кладёт выбранный расчёт под ключ `calc`.
 - Флоу: узел `Prepare Inputs` — устойчивый разбор вложений (отбор PDF-расчёта по имени файла
