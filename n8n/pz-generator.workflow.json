@@ -211,7 +211,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner n8n, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
+        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner n8n, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data + sep + '# Шаблон сборки (болванки дословно, шаблоны блоков)\\n' + $('Fetch Template').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "38a2e3ac-10d3-49e4-8ed0-a3ef5da34aec",
       "name": "Load Contracts",
@@ -316,6 +316,29 @@
     },
     {
       "parameters": {
+        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/document-template-type-A.json",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "e1a10005-0000-4000-8000-000000000005",
+      "name": "Fetch Template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "position": [
+        660,
+        360
+      ]
+    },
+    {
+      "parameters": {
         "operation": "pdf",
         "binaryPropertyName": "calc",
         "options": {
@@ -392,7 +415,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  const em = m.months.find(x => x.month === m.example_month);\n  const f = m.flags;\n  const t = m.tariffs.find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  const mult = t.nds === 'without' ? 1.2 : 1.0;\n  if (!eq(em.sum_hvs, em.V_hvs * t.tariff_hvs * mult, T.line)) fails.push('1:ХВС');\n  if (em.V_stoki !== em.V_hvs + (f.has_gvs ? em.V_gvs : 0)) fails.push('2:V_stoki');\n  if (!eq(em.sum_stoki, em.V_stoki * t.tariff_vo * mult, T.line)) fails.push('3:стоки');\n  if (f.has_nvcs) {\n    if (!eq(em.sum_nvcs, em.sum_stoki * f.k_coefficient, T.line)) fails.push('4:НВЦС');\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K');\n  }\n  if (f.has_p203 && !eq(em.sum_p203, em.sum_stoki * 2, T.line)) fails.push('5:п203');\n  let comp = em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? em.sum_p203 : 0);\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца');\n  const sm = m.months.reduce((s, x) => s + x.month_total, 0);\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено');\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток');\n} catch(e) { fails.push('validator_error:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  if (!t) { fails.push('schema:нет_тарифа_для_месяца'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    if (!eq(em.sum_hvs, em.V_hvs * t.tariff_hvs * mult, T.line)) fails.push('1:ХВС');\n    if (!eq(em.sum_stoki, em.V_stoki * t.tariff_vo * mult, T.line)) fails.push('3:стоки');\n  }\n  if (f.has_nvcs) {\n    if (!eq(em.sum_nvcs, em.sum_stoki * f.k_coefficient, T.line)) fails.push('4:НВЦС');\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203_нет_суммы');\n  const comp = em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0);\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца');\n  const sm = m.months.reduce((s, x) => s + x.month_total, 0);\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено');\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток');\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
       },
       "id": "e970f526-b13a-4383-a5ea-a13201450d79",
       "name": "Validate",
@@ -471,7 +494,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  const em = m.months.find(x => x.month === m.example_month);\n  const f = m.flags;\n  const t = m.tariffs.find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  const mult = t.nds === 'without' ? 1.2 : 1.0;\n  if (!eq(em.sum_hvs, em.V_hvs * t.tariff_hvs * mult, T.line)) fails.push('1:ХВС');\n  if (em.V_stoki !== em.V_hvs + (f.has_gvs ? em.V_gvs : 0)) fails.push('2:V_stoki');\n  if (!eq(em.sum_stoki, em.V_stoki * t.tariff_vo * mult, T.line)) fails.push('3:стоки');\n  if (f.has_nvcs) {\n    if (!eq(em.sum_nvcs, em.sum_stoki * f.k_coefficient, T.line)) fails.push('4:НВЦС');\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K');\n  }\n  if (f.has_p203 && !eq(em.sum_p203, em.sum_stoki * 2, T.line)) fails.push('5:п203');\n  let comp = em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? em.sum_p203 : 0);\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца');\n  const sm = m.months.reduce((s, x) => s + x.month_total, 0);\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено');\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток');\n} catch(e) { fails.push('validator_error:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  if (!t) { fails.push('schema:нет_тарифа_для_месяца'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    if (!eq(em.sum_hvs, em.V_hvs * t.tariff_hvs * mult, T.line)) fails.push('1:ХВС');\n    if (!eq(em.sum_stoki, em.V_stoki * t.tariff_vo * mult, T.line)) fails.push('3:стоки');\n  }\n  if (f.has_nvcs) {\n    if (!eq(em.sum_nvcs, em.sum_stoki * f.k_coefficient, T.line)) fails.push('4:НВЦС');\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203_нет_суммы');\n  const comp = em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0);\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца');\n  const sm = m.months.reduce((s, x) => s + x.month_total, 0);\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено');\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток');\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
       },
       "id": "b63e1d18-35fe-4f04-9ba0-f11a60b50d48",
       "name": "Validate 2",
@@ -689,6 +712,17 @@
       ]
     },
     "Fetch Generation": {
+      "main": [
+        [
+          {
+            "node": "Fetch Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Template": {
       "main": [
         [
           {
