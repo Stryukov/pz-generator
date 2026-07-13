@@ -210,15 +210,95 @@
     },
     {
       "parameters": {
-        "jsCode": "// Тянем контракты/структуру/схему из репозитория (docs_base_url). Флоу статичен, правки — в .md.\nconst base = $('Config').first().json.docs_base_url.replace(/\\/$/, '');\nasync function get(p){ return await this.helpers.httpRequest({ url: base + '/' + p, json: false }); }\nconst [extraction, schema, spec, generation] = await Promise.all([\n  get.call(this,'01-extraction-contract.md'),\n  get.call(this,'02-manifest-schema.md'),\n  get.call(this,'04-spec-type-A.md'),\n  get.call(this,'05-generation-contract.md')\n]);\nconst j = $input.first().json;\nj.extraction_system = extraction + '\\n\\n---\\n\\n' + schema;\nj.generation_system = spec + '\\n\\n---\\n\\n' + generation;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner n8n, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "38a2e3ac-10d3-49e4-8ed0-a3ef5da34aec",
       "name": "Load Contracts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        540,
+        900,
         260
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.docs_base_url }}/01-extraction-contract.md",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "e1a10001-0000-4000-8000-000000000001",
+      "name": "Fetch Extraction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.docs_base_url }}/02-manifest-schema.md",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "e1a10002-0000-4000-8000-000000000002",
+      "name": "Fetch Schema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.docs_base_url }}/04-spec-type-A.md",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "e1a10003-0000-4000-8000-000000000003",
+      "name": "Fetch Spec",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.docs_base_url }}/05-generation-contract.md",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "e1a10004-0000-4000-8000-000000000004",
+      "name": "Fetch Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        780,
+        360
       ]
     },
     {
@@ -542,7 +622,7 @@
       "main": [
         [
           {
-            "node": "Load Contracts",
+            "node": "Fetch Extraction",
             "type": "main",
             "index": 0
           }
@@ -550,6 +630,50 @@
         [
           {
             "node": "Reply Need Calc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Extraction": {
+      "main": [
+        [
+          {
+            "node": "Fetch Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Schema": {
+      "main": [
+        [
+          {
+            "node": "Fetch Spec",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Spec": {
+      "main": [
+        [
+          {
+            "node": "Fetch Generation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Generation": {
+      "main": [
+        [
+          {
+            "node": "Load Contracts",
             "type": "main",
             "index": 0
           }

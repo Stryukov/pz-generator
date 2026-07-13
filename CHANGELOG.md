@@ -22,6 +22,9 @@
   задаётся жёстко в узле, из `Config` убраны `model` и `anthropic_version`.
 - Флоу: расчёт подаётся модели текстом через новый узел `Extract Calc Text`
   (`Extract from File`), а не PDF-документом base64 (Gemma — текстовая модель).
+- Флоу: контракты грузятся четырьмя `HTTP Request`-узлами (`Fetch Extraction/Schema/Spec/
+  Generation`), `Load Contracts` только склеивает строки. Причина: `helpers.httpRequest`
+  внутри Code-узла виснет в task-runner n8n (таймаут задачи 60 с).
 - Флоу: из `Filter Subject` убрана проверка отправителя (защита от петли не нужна в топологии
   отдельного ящика ПЗ); `Prepare Inputs` кладёт выбранный расчёт под ключ `calc`.
 - Флоу: узел `Prepare Inputs` — устойчивый разбор вложений (отбор PDF-расчёта по имени файла
