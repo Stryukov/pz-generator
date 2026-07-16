@@ -537,30 +537,16 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "={{ $('Config').item.json.converter_url }}",
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "parameterType": "formBinaryData",
-              "name": "files",
-              "inputDataFieldName": "zapiska"
-            }
-          ]
-        },
-        "options": {}
+        "command": "=pandoc /tmp/{{ $execution.id }}.html -o /tmp/{{ $execution.id }}.docx"
       },
       "id": "1c290017-6a6d-46eb-b807-e9712f93c02d",
       "name": "HTML to DOCX",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
       "position": [
-        2380,
+        2500,
         200
-      ],
-      "disabled": true
+      ]
     },
     {
       "parameters": {
@@ -631,6 +617,62 @@
         1080,
         260
       ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/{{ $execution.id }}.html",
+        "dataPropertyName": "zapiska",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        2340,
+        200
+      ],
+      "id": "d0c0f0a0-0000-4000-8000-000000000020",
+      "name": "Write HTML"
+    },
+    {
+      "parameters": {
+        "fileSelector": "=/tmp/{{ $execution.id }}.docx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        2660,
+        200
+      ],
+      "id": "d0c0f0a0-0000-4000-8000-000000000021",
+      "name": "Read DOCX"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().binary.data;\nb.fileName = 'poyasnitelnaya_zapiska.docx';\nb.mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';\nconst j = $('Parse Output').first().json;\nreturn [{ json: j, binary: { zapiska: b } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2820,
+        200
+      ],
+      "id": "d0c0f0a0-0000-4000-8000-000000000022",
+      "name": "Pack DOCX"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f /tmp/{{ $execution.id }}.html /tmp/{{ $execution.id }}.docx"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3140,
+        200
+      ],
+      "id": "d0c0f0a0-0000-4000-8000-000000000023",
+      "name": "Cleanup DOCX"
     }
   ],
   "connections": {
@@ -900,7 +942,7 @@
       "main": [
         [
           {
-            "node": "HTML to DOCX",
+            "node": "Write HTML",
             "type": "main",
             "index": 0
           }
@@ -911,7 +953,7 @@
       "main": [
         [
           {
-            "node": "Reply With Zapiska",
+            "node": "Read DOCX",
             "type": "main",
             "index": 0
           }
@@ -945,6 +987,50 @@
         [
           {
             "node": "Extraction Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write HTML": {
+      "main": [
+        [
+          {
+            "node": "HTML to DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read DOCX": {
+      "main": [
+        [
+          {
+            "node": "Pack DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pack DOCX": {
+      "main": [
+        [
+          {
+            "node": "Reply With Zapiska",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply With Zapiska": {
+      "main": [
+        [
+          {
+            "node": "Cleanup DOCX",
             "type": "main",
             "index": 0
           }

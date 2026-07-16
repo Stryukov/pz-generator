@@ -5,6 +5,12 @@
 он переименовывается в версию с датой, ставится тег, заводится новый [Unreleased].
 
 ## [Unreleased]
+### Changed
+- Флоу: вывод записки в **DOCX через pandoc** (Execute Command) вместо отключённого
+  Gotenberg-узла: `Parse Output → Write HTML → HTML to DOCX (pandoc) → Read DOCX → Pack DOCX →
+  Reply → Cleanup DOCX`. Вложение — `poyasnitelnaya_zapiska.docx`.
+- `templates/executor-context.md`: доп-контекст оформлен двумя таблицами для исполнителей
+  (поле/пример/значение + реестр ПУ); добавлены поля «НПА по тарифам» и «список ПУ».
 
 ## [0.1.0-beta] - 2026-07-16
 ### Added
