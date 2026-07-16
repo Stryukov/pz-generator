@@ -618,6 +618,19 @@
         900,
         260
       ]
+    },
+    {
+      "parameters": {
+        "command": "=rm -f /tmp/{{ $execution.id }}.pdf"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000012",
+      "name": "Cleanup PDF",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        260
+      ]
     }
   ],
   "connections": {
@@ -917,6 +930,17 @@
       ]
     },
     "PDF to Text": {
+      "main": [
+        [
+          {
+            "node": "Cleanup PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup PDF": {
       "main": [
         [
           {
