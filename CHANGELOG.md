@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 ### Changed
+- Плейсхолдеры в записке — угловые скобки `<…>`, оформленные **цветным кодом**
+  (`<code class="ph" style="color:#c0392b">&lt;…&gt;</code>`) вместо маркера «‹…›». Обновлены
+  шаблон, `docs/04`, `docs/05` и исполнитель-facing упоминания.
 - Флоу: вывод записки в **DOCX через pandoc** (Execute Command) вместо отключённого
   Gotenberg-узла: `Parse Output → Write HTML → HTML to DOCX (pandoc) → Read DOCX → Pack DOCX →
   Reply → Cleanup DOCX`. Вложение — `poyasnitelnaya_zapiska.docx`.
