@@ -650,7 +650,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const b = $input.first().binary.data;\nb.fileName = 'poyasnitelnaya_zapiska.docx';\nb.mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';\nconst j = $('Parse Output').first().json;\nreturn [{ json: j, binary: { zapiska: b } }];\n"
+        "jsCode": "const b = $input.first().binary.data;\nb.fileName = 'node-' + $execution.id + '.docx';\nb.mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';\nconst j = $('Parse Output').first().json;\nreturn [{ json: j, binary: { zapiska: b } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
