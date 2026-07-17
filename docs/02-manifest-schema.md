@@ -53,7 +53,9 @@
   "totals": { "charged": 275509.30, "paid": 0, "balance": 275509.30 },
   "executor_context": {
     "ispolnitel": null,             // ФИО, должность — из доп-контекста
-    "object_purpose": null,         // или "DELETE" если исполнитель просил удалить блок
+    "objects": [                    // объекты из доп-контекста (несколько); [] — нет; "DELETE" в purpose → удалить блок
+      { "address": null, "purpose": null }   // purpose = null, если назначение не указано
+    ],
     "normativ_npa": null,
     "nvcs_mode_override": null
   },

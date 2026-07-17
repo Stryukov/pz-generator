@@ -121,11 +121,13 @@
     },
     {
       "id": 2,
-      "name": "object_purpose",
+      "name": "objects",
       "required": true,
       "deletable_by_user": true,
-      "template": "По адресу: {address} располагается {purpose}.",
-      "note": "исполнитель может полностью удалить блок, если назначение не важно"
+      "template": "На объекте по адресу: {address} располагается {purpose}[, по адресу: {address2} располагается {purpose2}]…",
+      "note": "исполнитель может полностью удалить блок",
+      "source": "executor_context.objects (список объектов)",
+      "rule": "перебрать objects; нет purpose → плейсхолдер; согласовать «располагается/располагаются»; весь блок — один удаляемый абзац"
     },
     {
       "id": 3,
