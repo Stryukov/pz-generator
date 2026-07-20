@@ -5,7 +5,12 @@
 он переименовывается в версию с датой, ставится тег, заводится новый [Unreleased].
 
 ## [Unreleased]
+### Added
+- `templates/reference-type-A.docx` — reference-документ pandoc: формат ПЗ (Times New Roman 14,
+  выравнивание по ширине, поля 2/1,5/2/3 см), плейсхолдеры — красный `Verbatim Char`.
 ### Changed
+- Флоу: DOCX собирается с `--reference-doc` — узлы `Fetch RefDoc`/`Write RefDoc` качают шаблон
+  из репозитория (правка стилей в git меняет вид DOCX без правки флоу).
 - Флоу: две модели — **`Router AI (OpenAI)`** (routerai, `anthropic/claude-sonnet-5`, temp 0,
   maxTokens 10000, Responses API OFF) подключён к трём агентам; **`Gemma (Ollama)`** отвязана
   как локальный запасной вариант (переключение = перекинуть связь `ai_languageModel`).

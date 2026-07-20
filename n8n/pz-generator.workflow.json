@@ -537,7 +537,7 @@
     },
     {
       "parameters": {
-        "command": "=pandoc /tmp/{{ $execution.id }}.html -o /tmp/{{ $execution.id }}.docx"
+        "command": "=pandoc /tmp/{{ $execution.id }}.html -o /tmp/{{ $execution.id }}.docx --reference-doc=/tmp/{{ $execution.id }}-ref.docx"
       },
       "id": "1c290017-6a6d-46eb-b807-e9712f93c02d",
       "name": "HTML to DOCX",
@@ -663,7 +663,7 @@
     },
     {
       "parameters": {
-        "command": "=rm -f /tmp/{{ $execution.id }}.html /tmp/{{ $execution.id }}.docx"
+        "command": "=rm -f /tmp/{{ $execution.id }}.html /tmp/{{ $execution.id }}.docx /tmp/{{ $execution.id }}-ref.docx"
       },
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
@@ -702,6 +702,45 @@
           "name": "routerai (OpenAI-compatible)"
         }
       }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/reference-type-A.docx",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000031",
+      "name": "Fetch RefDoc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "position": [
+        2420,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/{{ $execution.id }}-ref.docx",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000032",
+      "name": "Write RefDoc",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        2540,
+        320
+      ]
     }
   ],
   "connections": {
@@ -1010,7 +1049,7 @@
       "main": [
         [
           {
-            "node": "HTML to DOCX",
+            "node": "Fetch RefDoc",
             "type": "main",
             "index": 0
           }
@@ -1066,6 +1105,28 @@
           {
             "node": "Generation Agent",
             "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch RefDoc": {
+      "main": [
+        [
+          {
+            "node": "Write RefDoc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write RefDoc": {
+      "main": [
+        [
+          {
+            "node": "HTML to DOCX",
+            "type": "main",
             "index": 0
           }
         ]
