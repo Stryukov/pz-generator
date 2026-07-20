@@ -41,7 +41,7 @@
       "tariff_hvs": 163.13, "tariff_vo": 207.50, "nds": "without" }
   ],
   "tariff_npa": "Постановление РСТ Камчатского края № 33-Н от 05.03.2025",
-  "months": [
+  "months": [                       // суммы sum_* и month_total — С НДС (итоговые колонки расчёта)
     { "month": "2025-04",
       "V_hvs": 168.092, "sum_hvs": 11273.59,
       "V_gvs": 0, "V_stoki": 168.092, "sum_stoki": 19011.20,
@@ -53,7 +53,9 @@
   "totals": { "charged": 275509.30, "paid": 0, "balance": 275509.30 },
   "executor_context": {
     "ispolnitel": null,             // ФИО, должность — из доп-контекста
-    "object_purpose": null,         // или "DELETE" если исполнитель просил удалить блок
+    "objects": [                    // объекты из доп-контекста (несколько); [] — нет; "DELETE" в purpose → удалить блок
+      { "address": null, "purpose": null }   // purpose = null, если назначение не указано
+    ],
     "normativ_npa": null,
     "nvcs_mode_override": null
   },
