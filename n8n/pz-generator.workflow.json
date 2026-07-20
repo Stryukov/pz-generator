@@ -139,7 +139,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Разбор вложений: выбираем PDF-расчёт под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst pdfs = keys.filter(isPdf);\nconst candidates = pdfs.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// предпочитаем «расчёт задолженности»; иначе первый не-исключённый PDF\nconst preferred = candidates.find(k => lower(k).includes('расч') && lower(k).includes('задолж'));\nconst calcKey = preferred || candidates[0] || null;\n// выбранный расчёт кладём под стабильный ключ `calc` (его пишет на диск Write Calc PDF)\nconst outBin = {};\nlet calc_name = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: (j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || (typeof j.from === 'string' ? j.from : ''),\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
+        "jsCode": "// Разбор вложений: выбираем файл расчёта (PDF или XLSX) под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\nconst isXlsx = (k) => (bin[k].mimeType||'').includes('spreadsheetml') || lower(k).endsWith('.xlsx');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst files = keys.filter(k => isPdf(k) || isXlsx(k));\nconst candidates = files.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// приоритет: код биллинг-выгрузки (V_RP_PKV_DBT_REP_UL_NACH_PAY-N) или «расчёт задолженности»\nconst preferred = candidates.find(k => lower(k).includes('dbt_rep_ul_nach_pay') || (lower(k).includes('расч') && lower(k).includes('задолж')));\nconst calcKey = preferred || candidates[0] || null;\nconst outBin = {};\nlet calc_name = null, calc_type = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); calc_type = isXlsx(calcKey) ? 'xlsx' : 'pdf'; }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name, calc_type,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: (j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || (typeof j.from === 'string' ? j.from : ''),\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
       },
       "id": "9f7efaad-8880-47de-97d5-26c5293f23e1",
       "name": "Prepare Inputs",
@@ -365,7 +365,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\n\nРасчёт:\n{{ $('PDF to Text').item.json.stdout }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
         "messages": {
           "messageValues": [
             {
@@ -444,7 +444,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\n\nРасчёт:\n{{ $('PDF to Text').item.json.stdout }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
         "messages": {
           "messageValues": [
             {
@@ -741,6 +741,82 @@
         2540,
         320
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1a2b3c4-0000-4000-8000-000000000040",
+              "leftValue": "={{ $json.calc_type }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000041",
+      "name": "Calc Type?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        570,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "calc",
+        "options": {
+          "headerRow": false,
+          "rawData": true,
+          "includeEmptyCells": true
+        }
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000042",
+      "name": "Extract XLSX",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        720,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Строки xlsx (Extract XLSX) -> плоский ;-разделённый текст расчёта\nconst rows = $input.all().map(it => it.json);\nconst fmt = (v) => {\n  if (v === null || v === undefined) return '';\n  if (typeof v === 'number' && !Number.isInteger(v)) return String(Math.round(v * 1000) / 1000);\n  return String(v);\n};\nconst lines = rows.map(r => {\n  const vals = Array.isArray(r) ? r : Object.values(r);\n  let cells = vals.map(fmt);\n  while (cells.length && cells[cells.length-1] === '') cells.pop();\n  return cells.join(';');\n});\nconst calc_text = lines.filter(l => l.replace(/;/g,'').trim() !== '').join('\n');\nreturn [{ json: { calc_text } }];\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000043",
+      "name": "XLSX to Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        890,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Унифицируем текст расчёта из PDF- или XLSX-ветки\nlet calc_text = '';\ntry { const s = $('PDF to Text').first().json.stdout; if (s) calc_text = s; } catch (e) {}\nif (!calc_text) { try { const t = $('XLSX to Text').first().json.calc_text; if (t) calc_text = t; } catch (e) {} }\nreturn [{ json: { calc_text } }];\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000044",
+      "name": "Calc Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        260
+      ]
     }
   ],
   "connections": {
@@ -872,7 +948,7 @@
       "main": [
         [
           {
-            "node": "Write Calc PDF",
+            "node": "Calc Type?",
             "type": "main",
             "index": 0
           }
@@ -1038,7 +1114,7 @@
       "main": [
         [
           {
-            "node": "Extraction Agent",
+            "node": "Calc Text",
             "type": "main",
             "index": 0
           }
@@ -1126,6 +1202,57 @@
         [
           {
             "node": "HTML to DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calc Type?": {
+      "main": [
+        [
+          {
+            "node": "Write Calc PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract XLSX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract XLSX": {
+      "main": [
+        [
+          {
+            "node": "XLSX to Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XLSX to Text": {
+      "main": [
+        [
+          {
+            "node": "Calc Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calc Text": {
+      "main": [
+        [
+          {
+            "node": "Extraction Agent",
             "type": "main",
             "index": 0
           }
