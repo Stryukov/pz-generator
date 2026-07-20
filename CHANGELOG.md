@@ -5,6 +5,16 @@
 он переименовывается в версию с датой, ставится тег, заводится новый [Unreleased].
 
 ## [Unreleased]
+### Fixed
+- xlsx-ветка: биллинговые выгрузки имеют **сломанный `<dimension>`** (заявляет меньше строк, чем
+  есть) → n8n `Extract from File`/SheetJS читал только 2 месяца из 13. Заменено на конвертацию
+  **xlsx2csv** через Execute Command (`Write Calc XLSX → XLSX to CSV → Cleanup XLSX`), которая
+  читает реальные строки. Требует `python3` + `pip install xlsx2csv` в контейнере.
+- Валидатор (`Validate`/`Validate 2` + `docs/03`): null-guard тарифного интервала —
+  не падать `schema:…null…slice` при `date_to: null` (открытый интервал трактуется как «до конца»).
+- Верификация сборки: все Code-узлы прогоняются через `node --check` (ловит реальный LF внутри
+  JS-литералов — прежний класс ошибок).
+
 ### Added
 - Приём расчёта в **xlsx**: `Prepare Inputs` принимает PDF и xlsx (`calc_type`), приоритет
   выбора — код биллинг-выгрузки `dbt_rep_ul_nach_pay` или «расчёт задолженности»; развилка
