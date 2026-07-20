@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 ### Added
+- Приём расчёта в **xlsx**: `Prepare Inputs` принимает PDF и xlsx (`calc_type`), приоритет
+  выбора — код биллинг-выгрузки `dbt_rep_ul_nach_pay` или «расчёт задолженности»; развилка
+  `Calc Type?`: pdf → pdftotext (как раньше), xlsx → `Extract XLSX` + `XLSX to Text`
+  (;-разделённый текст); обе ветки сходятся в `Calc Text`.
+- `docs/01`: карта колонок **формата B** (xlsx-выгрузка `V_RP_PKV_DBT_REP_UL_NACH_PAY`):
+  реквизиты из шапки, объёмы по ПУ/нормативу/итого, суммы уже с НДС, служебные строки
+  «Итого за месяц»/«Всего:», сторно-месяцы → нули + note; НВЦС/п.203 отсутствуют.
+- `docs/02`: опциональное `months[].note`; `docs/05`: все `months[].note` — в комментарии
+  исполнителю, в текст записки не выводятся.
+### Added
 - `templates/reference-type-A.docx` — reference-документ pandoc: формат ПЗ (Times New Roman 14,
   выравнивание по ширине, поля 2/1,5/2/3 см), плейсхолдеры — красный `Verbatim Char`.
 ### Changed
