@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), Ollama (локальный сервер Gemma).\n3. Узел «Gemma (Ollama)»: модель задана жёстко (`gemma3`) — при смене правьте здесь.\n4. Узел «HTML→DOCX»: указать свой конвертер (для self-hosted — Gotenberg). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.\n\nРасчёт (PDF; в будущем xlsx) не передаётся модели документом — узел «PDF to Text» (poppler pdftotext) извлекает текст, он и уходит в промпт (Gemma — текстовая модель).",
+        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), OpenAI-совместимый ключ routerai (узел «Router AI (OpenAI)», Base URL https://routerai.ru/v1); Ollama — опционально.\n3. Модели: подключён «Router AI (OpenAI)» (claude-sonnet-5, temp 0, Responses API OFF). «Gemma (Ollama)» отвязана — запасной локальный вариант, переключение = перекинуть связь ai_languageModel.\n4. Узел «HTML→DOCX»: указать свой конвертер (для self-hosted — Gotenberg). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.\n\nРасчёт (PDF; в будущем xlsx) не передаётся модели документом — узел «PDF to Text» (poppler pdftotext) извлекает текст, он и уходит в промпт (Gemma — текстовая модель).",
         "height": 420,
         "width": 480,
         "color": 4
@@ -673,6 +673,35 @@
       ],
       "id": "d0c0f0a0-0000-4000-8000-000000000023",
       "name": "Cleanup DOCX"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "anthropic/claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "anthropic/claude-sonnet-5"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 10000,
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1360,
+        560
+      ],
+      "id": "a1b2c3d4-0000-4000-8000-000000000030",
+      "name": "Router AI (OpenAI)",
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_ROUTERAI",
+          "name": "routerai (OpenAI-compatible)"
+        }
+      }
     }
   ],
   "connections": {
@@ -813,23 +842,7 @@
     },
     "Gemma (Ollama)": {
       "ai_languageModel": [
-        [
-          {
-            "node": "Extraction Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Re-extract",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "Generation Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Extraction Agent": {
@@ -1032,6 +1045,27 @@
           {
             "node": "Cleanup DOCX",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router AI (OpenAI)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extraction Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Re-extract",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Generation Agent",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]
