@@ -7,9 +7,13 @@
 по `docs_base_url`. Правки вносятся в `.md` в git, флоу остаётся неизменным. Промпты агентов
 намеренно простые — вся логика в контрактах.
 
-Модель — **локальная Gemma через Ollama**. Три агента (извлечение, повтор, генерация) — узлы
-`Basic LLM Chain`, подключённые к одному под-узлу `Gemma (Ollama)`. Модель задана жёстко в этом
-узле (не в Config).
+Три агента (извлечение, повтор, генерация) — узлы `Basic LLM Chain`, питаются от одного
+под-узла модели. Во флоу **два** модельных узла:
+- **`Router AI (OpenAI)`** — подключён по умолчанию: OpenAI-совместимый роутер
+  (https://routerai.ru/v1), модель `anthropic/claude-sonnet-5`, temperature 0, maxTokens 10000,
+  **Use Responses API = OFF**.
+- **`Gemma (Ollama)`** — локальный запасной вариант, отвязан. Переключение модели =
+  перекинуть связь `ai_languageModel` с одного узла на другой.
 
 ## Настроить перед запуском
 1. **Config** (Set-узел):
@@ -20,12 +24,13 @@
 2. **Креды:**
    - IMAP — входящая почта (узел `Email Trigger`).
    - SMTP — ответы (`Reply *`).
-   - Ollama — локальный сервер (узел `Gemma (Ollama)`); модель по умолчанию `gemma3`.
-3. **HTML→DOCX** — узел отключён по умолчанию: записка вложится как HTML. Чтобы получать DOCX,
-   включите узел и задайте `converter_url` (Gotenberg/CloudConvert/свой сервис).
-   Для self-hosted рекомендуется **Gotenberg** отдельным контейнером рядом (данные не уходят
-   наружу — важно для судебных документов); тогда
-   `converter_url = http://gotenberg:3000/forms/libreoffice/convert`.
+   - routerai — OpenAI-креденшл с Base URL `https://routerai.ru/v1` (узел `Router AI (OpenAI)`).
+   - Ollama — локальный сервер (узел `Gemma (Ollama)`, запасной; модель `gemma3:27b`).
+3. **HTML→DOCX** — конвертация через **pandoc** (Execute Command; pandoc должен быть установлен
+   в контейнере n8n). Форматирование DOCX задаёт **`templates/reference-type-A.docx`**
+   (Times New Roman 14, по ширине, поля 2/1,5/2/3 см; плейсхолдеры — красный Consolas):
+   узел `Fetch RefDoc` скачивает его из репозитория, pandoc получает `--reference-doc`.
+   Правите стили в reference-файле в git → вид DOCX меняется без правки флоу.
 
 ## Схема
 ```
