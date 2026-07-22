@@ -54,7 +54,7 @@ try {
   const em = m.months.find(x => x.month === m.example_month);
   if (!em) throw new Error("example_month отсутствует в months");
   const f = m.flags || {};
-  const t = (m.tariffs || []).find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));
+  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));
   if (!t) { fails.push("schema: не найден тарифный интервал для месяца " + em.month + " — проверь tariffs[].date_from/date_to"); }
   else {
     const mult = t.nds === "without" ? 1.2 : 1.0;   // суммы в манифесте — с НДС
