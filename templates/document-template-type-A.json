@@ -82,6 +82,7 @@
   "placeholders": {
     "abonent_name": "<code class=\"ph\" style=\"color:#c0392b\">&lt;название абонента&gt;</code>",
     "contract": "<code class=\"ph\" style=\"color:#c0392b\">&lt;№ и дата договора&gt;</code>",
+    "meter_no": "<code class=\"ph\" style=\"color:#c0392b\">&lt;№ прибора учёта&gt;</code>",
     "poverka_date": "<code class=\"ph\" style=\"color:#c0392b\">&lt;дата поверки&gt;</code>",
     "normativ_npa": "<code class=\"ph\" style=\"color:#c0392b\">&lt;укажите НПА по нормативу&gt;</code>",
     "tariff_npa": "<code class=\"ph\" style=\"color:#c0392b\">&lt;НПА по тарифу&gt;</code>",

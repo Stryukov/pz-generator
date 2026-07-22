@@ -30,6 +30,8 @@
   },
   "pu_list": [                      // если calc_method = "pu"
     { "object": "кафе Пит-Стоп", "meter_no": "580873119", "poverka_date": null }
+    // если в расчёте только адреса объектов (без приборов): object = адрес,
+    // meter_no и poverka_date = null → в записке плейсхолдеры
   ],
   "normativ": {                     // если calc_method = "norm"; иначе null
     "npa": null, "volume_hvs": null, "volume_gvs": null
@@ -53,12 +55,12 @@
   "example_month": "2025-04",       // выбранный репрезентативный месяц
   "totals": { "charged": 275509.30, "paid": 0, "balance": 275509.30 },
   "executor_context": {
-    "ispolnitel": null,             // ФИО, должность — из доп-контекста
-    "objects": [                    // объекты из доп-контекста (несколько); [] — нет; "DELETE" в purpose → удалить блок
-      { "address": null, "purpose": null }   // purpose = null, если назначение не указано
+    "ispolnitel": null,             // "ФИО, должность" — из доп-контекста; нет → из блока «Исполнитель:» расчёта
+    "objects": [                    // объекты из доп-контекста; нет → адреса из расчёта (purpose = null);
+      { "address": null, "purpose": null }   // [] — нет; "DELETE" в purpose → удалить блок
     ],
-    "normativ_npa": null,
-    "nvcs_mode_override": null
+    "normativ_npa": null,           // только доп-контекст (в расчёте источника нет)
+    "nvcs_mode_override": null      // только доп-контекст
   },
   "issues": {
     "missing": ["abonent.contract_no", "executor_context.ispolnitel"],
