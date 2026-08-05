@@ -211,14 +211,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner n8n, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data + sep + '# Шаблон сборки (болванки дословно, шаблоны блоков)\\n' + $('Fetch Template').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
+        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nconst d = $('Detect Type').first().json;\nj.doc_type = d.doc_type;\nj.doc_type_matched = d.doc_type_matched;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Columns').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data + sep + '# Шаблон сборки (болванки дословно, шаблоны блоков)\\n' + $('Fetch Template').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "38a2e3ac-10d3-49e4-8ed0-a3ef5da34aec",
       "name": "Load Contracts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        900,
+        1920,
         260
       ]
     },
@@ -241,8 +241,8 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        540,
-        160
+        1490,
+        170
       ]
     },
     {
@@ -264,13 +264,13 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        660,
-        160
+        1770,
+        170
       ]
     },
     {
       "parameters": {
-        "url": "={{ $('Config').item.json.docs_base_url }}/04-spec-type-A.md",
+        "url": "={{ $('Config').item.json.docs_base_url }}/{{ $('Detect Type').item.json.spec_file }}",
         "options": {
           "response": {
             "response": {
@@ -287,8 +287,8 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        780,
-        160
+        1490,
+        360
       ]
     },
     {
@@ -310,13 +310,13 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        780,
+        1630,
         360
       ]
     },
     {
       "parameters": {
-        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/document-template-type-A.json",
+        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/{{ $('Detect Type').item.json.template_file }}",
         "options": {
           "response": {
             "response": {
@@ -333,7 +333,7 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        660,
+        1770,
         360
       ]
     },
@@ -379,7 +379,7 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.5,
       "position": [
-        980,
+        2080,
         260
       ]
     },
@@ -398,7 +398,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\nconst det = $('Detect Type').first().json;\nif (det.doc_type_matched === false) {\n  fails.push('тип: расчёт не опознан ни одним правилом types.json — применён default \"' + det.doc_type + '\"; проверьте, поддержан ли этот формат');\n} else if (m && m.doc_type && m.doc_type !== det.doc_type) {\n  fails.push('тип: детекция дала \"' + det.doc_type + '\", извлечение указало \"' + m.doc_type + '\" — карта колонок могла не совпасть с расчётом');\n}\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
       },
       "id": "e970f526-b13a-4383-a5ea-a13201450d79",
       "name": "Validate",
@@ -477,7 +477,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\nconst det = $('Detect Type').first().json;\nif (det.doc_type_matched === false) {\n  fails.push('тип: расчёт не опознан ни одним правилом types.json — применён default \"' + det.doc_type + '\"; проверьте, поддержан ли этот формат');\n} else if (m && m.doc_type && m.doc_type !== det.doc_type) {\n  fails.push('тип: детекция дала \"' + det.doc_type + '\", извлечение указало \"' + m.doc_type + '\" — карта колонок могла не совпасть с расчётом');\n}\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
       },
       "id": "b63e1d18-35fe-4f04-9ba0-f11a60b50d48",
       "name": "Validate 2",
@@ -588,8 +588,8 @@
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1.1,
       "position": [
-        720,
-        260
+        590,
+        180
       ]
     },
     {
@@ -601,8 +601,8 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        900,
-        260
+        740,
+        180
       ]
     },
     {
@@ -614,8 +614,8 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        1080,
-        260
+        890,
+        180
       ]
     },
     {
@@ -769,7 +769,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        570,
+        440,
         260
       ]
     },
@@ -782,7 +782,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1240,
+        1040,
         260
       ]
     },
@@ -796,8 +796,8 @@
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1.1,
       "position": [
-        720,
-        440
+        590,
+        380
       ],
       "id": "b2c3d4e5-0000-4000-8000-000000000040",
       "name": "Write Calc XLSX"
@@ -809,8 +809,8 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        890,
-        440
+        740,
+        380
       ],
       "id": "b2c3d4e5-0000-4000-8000-000000000041",
       "name": "XLSX to CSV"
@@ -822,11 +822,70 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        1050,
-        440
+        890,
+        380
       ],
       "id": "b2c3d4e5-0000-4000-8000-000000000042",
       "name": "Cleanup XLSX"
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/types.json"
+      },
+      "id": "e1a10010-0000-4000-8000-000000000010",
+      "name": "Fetch Types",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "position": [
+        1190,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Определение типа расчёта по таблице templates/types.json (узел Fetch Types).\n// Сеть НЕ трогаем: helpers.httpRequest в Code-узле виснет в task-runner n8n.\nconst raw = $('Fetch Types').first().json.data;\nconst table = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst pi = $('Prepare Inputs').first().json;\nconst text = String($('Calc Text').first().json.calc_text || '').toLowerCase();\nconst fname = String(pi.calc_name || '').toLowerCase();\nconst ctype = pi.calc_type || '';\nconst has = (s) => text.indexOf(String(s).toLowerCase()) !== -1;\nconst inName = (s) => fname.indexOf(String(s).toLowerCase()) !== -1;\nconst arr = (x) => Array.isArray(x) ? x : [];\nfunction ok(m) {\n  if (!m) return true;\n  if (m.calc_type && m.calc_type !== ctype) return false;\n  if (arr(m.filename_contains).length && !arr(m.filename_contains).some(inName)) return false;\n  if (arr(m.text_all).length && !arr(m.text_all).every(has)) return false;\n  if (arr(m.text_any).length && !arr(m.text_any).some(has)) return false;\n  if (arr(m.text_none).some(has)) return false;\n  return true;\n}\nconst types = arr(table.types);\nlet hit = types.find((t) => ok(t.match));\nconst matched = Boolean(hit);\nif (!hit) { hit = types.find((t) => t.id === table.default); }\nif (!hit) { throw new Error('Detect Type: тип не определён, и default отсутствует в types.json'); }\nconst j = $('Prepare Inputs').first().json;\nj.doc_type = hit.id;\nj.doc_type_title = hit.title || hit.id;\nj.doc_type_matched = matched;\nj.columns_file = hit.columns;\nj.spec_file = hit.spec;\nj.template_file = hit.template;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000050",
+      "name": "Detect Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "url": "={{ $('Config').item.json.docs_base_url }}/{{ $('Detect Type').item.json.columns_file }}"
+      },
+      "id": "e1a10011-0000-4000-8000-000000000011",
+      "name": "Fetch Columns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "position": [
+        1630,
+        170
+      ]
     }
   ],
   "connections": {
@@ -885,7 +944,7 @@
       "main": [
         [
           {
-            "node": "Fetch Extraction",
+            "node": "Calc Type?",
             "type": "main",
             "index": 0
           }
@@ -903,7 +962,7 @@
       "main": [
         [
           {
-            "node": "Fetch Schema",
+            "node": "Fetch Columns",
             "type": "main",
             "index": 0
           }
@@ -958,7 +1017,7 @@
       "main": [
         [
           {
-            "node": "Calc Type?",
+            "node": "Extraction Agent",
             "type": "main",
             "index": 0
           }
@@ -1240,7 +1299,7 @@
       "main": [
         [
           {
-            "node": "Extraction Agent",
+            "node": "Fetch Types",
             "type": "main",
             "index": 0
           }
@@ -1274,6 +1333,39 @@
         [
           {
             "node": "Calc Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Types": {
+      "main": [
+        [
+          {
+            "node": "Detect Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Type": {
+      "main": [
+        [
+          {
+            "node": "Fetch Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Columns": {
+      "main": [
+        [
+          {
+            "node": "Fetch Schema",
             "type": "main",
             "index": 0
           }
