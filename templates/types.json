@@ -21,8 +21,8 @@
         "text_none": ["площадь для расчета ОДН"]
       },
       "columns": "01-columns-prochie-on.md",
-      "spec": "04-spec-type-A.md",
-      "template": "document-template-type-A.json"
+      "spec": "04-spec-prochie-on.md",
+      "template": "document-template-prochie-on.json"
     }
   ]
 }
