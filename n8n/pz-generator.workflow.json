@@ -365,7 +365,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений. Ответ должен начинаться с { и заканчиваться } — без рассуждений, пояснений, заголовков и markdown до или после. Рассуждай про себя, в ответ выводи только JSON.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
         "messages": {
           "messageValues": [
             {
@@ -385,7 +385,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Достаём JSON манифеста из ответа модели (Basic LLM Chain → .text)\nconst resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest;\ntry { manifest = JSON.parse(text); } catch(e) { manifest = { _parse_error: e.message, _raw: text }; }\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
+        "jsCode": "// Достаём JSON манифеста из ответа модели (Basic LLM Chain -> .text)\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\nconst resp = $input.first().json;\nconst text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\nlet manifest = looseJson(text);\nif (!manifest) {\n  manifest = { _parse_error: 'ответ не содержит разбираемого JSON', _raw: String(text).slice(0, 2000) };\n}\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "1bd34394-e951-4aa6-8c24-a6c31f36d9f5",
       "name": "Parse Manifest",
@@ -444,7 +444,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста. Ответ должен начинаться с { и заканчиваться } — без рассуждений, пояснений, заголовков и markdown до или после. Рассуждай про себя, в ответ выводи только JSON.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
         "messages": {
           "messageValues": [
             {
@@ -504,7 +504,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
+        "text": "=Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}. Ответ должен начинаться с { и заканчиваться } — без рассуждений, пояснений, заголовков и markdown до или после. Рассуждай про себя, в ответ выводи только JSON.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
         "messages": {
           "messageValues": [
             {
@@ -524,7 +524,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\n// from/subject/messageId берём из Parse Manifest (в выходе модели их нет)\nconst carry = $('Parse Manifest').first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+        "jsCode": "// Достаём JSON записки из ответа модели; терпим обрамление текстом.\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\nconst resp = $input.first().json;\nconst text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\nlet out = looseJson(text);\nif (!out || typeof out.html !== 'string') {\n  out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>' + String(text).slice(0, 4000) + '</pre>',\n    executor_notes: ['Ответ генерации не удалось разобрать как JSON — проверьте лог узла'] };\n}\n// from/subject/messageId берём из Parse Manifest (в выходе модели их нет)\nconst carry = $('Parse Manifest').first().json;\nconst notes = (out.executor_notes && out.executor_notes.length)\n  ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- '))\n  : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (далее конвертируется в DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
       },
       "id": "ee803ca7-20f1-4493-8491-3391692f0e71",
       "name": "Parse Output",
