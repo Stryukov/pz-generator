@@ -524,7 +524,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Достаём JSON записки из ответа модели; терпим обрамление текстом.\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\nconst resp = $input.first().json;\nconst text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\nlet out = looseJson(text);\nif (!out || typeof out.html !== 'string') {\n  out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>' + String(text).slice(0, 4000) + '</pre>',\n    executor_notes: ['Ответ генерации не удалось разобрать как JSON — проверьте лог узла'] };\n}\n// from/subject/messageId берём из Parse Manifest (в выходе модели их нет)\nconst carry = $('Parse Manifest').first().json;\nconst notes = (out.executor_notes && out.executor_notes.length)\n  ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- '))\n  : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (далее конвертируется в DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+        "jsCode": "// Разбор ответа генерации. Не разобралось -> gen_ok=false, дальше узел Gen OK? шлёт на ретрай.\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n// Обрыв (есть открывающая скобка, но нет закрывающей) отличаем от мусора —\n// причины разные, и подсказка исполнителю должна быть разной.\nfunction looksTruncated(raw) {\n  const t = String(raw == null ? '' : raw);\n  const first = t.indexOf('{');\n  return first !== -1 && t.lastIndexOf('}') < first;\n}\nfunction respText(item) {\n  const r = item.json;\n  return typeof r.text === 'string' ? r.text\n    : (r.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\n}\n// Источник манифеста: если сработала петля повтора извлечения — Mark Assumptions,\n// иначе Parse Manifest. Нужен ретраю генерации.\nfunction genSource() {\n  let s = null;\n  try { s = $('Mark Assumptions').first().json; } catch (e) {}\n  if (!s || !s.manifest) { try { s = $('Parse Manifest').first().json; } catch (e) {} }\n  return s || {};\n}\nconst text = respText($input.first());\nconst src = genSource();\nconst out = looseJson(text);\nif (out && typeof out.html === 'string') {\n  const notes = (out.executor_notes && out.executor_notes.length)\n    ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- '))\n    : 'Замечаний нет.';\n  const b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\n  return [{ json: { executor_notes: notes, from: src.from, subject: src.subject, messageId: src.messageId, gen_ok: true },\n    binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n}\n// не разобралось — отдаём причину и данные для повторной генерации\nreturn [{ json: { gen_ok: false,\n  gen_fail_reason: looksTruncated(text) ? 'ответ оборван' : 'ответ не содержит JSON',\n  gen_raw: String(text).slice(0, 2000),\n  manifest: src.manifest, generation_system: src.generation_system,\n  from: src.from, subject: src.subject, messageId: src.messageId } }];\n"
       },
       "id": "ee803ca7-20f1-4493-8491-3391692f0e71",
       "name": "Parse Output",
@@ -886,6 +886,72 @@
         1630,
         170
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Разбор ответа повторной генерации. Здесь фоллбэк уже финальный.\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n// Обрыв (есть открывающая скобка, но нет закрывающей) отличаем от мусора —\n// причины разные, и подсказка исполнителю должна быть разной.\nfunction looksTruncated(raw) {\n  const t = String(raw == null ? '' : raw);\n  const first = t.indexOf('{');\n  return first !== -1 && t.lastIndexOf('}') < first;\n}\nfunction respText(item) {\n  const r = item.json;\n  return typeof r.text === 'string' ? r.text\n    : (r.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\n}\n// Источник манифеста: если сработала петля повтора извлечения — Mark Assumptions,\n// иначе Parse Manifest. Нужен ретраю генерации.\nfunction genSource() {\n  let s = null;\n  try { s = $('Mark Assumptions').first().json; } catch (e) {}\n  if (!s || !s.manifest) { try { s = $('Parse Manifest').first().json; } catch (e) {} }\n  return s || {};\n}\nconst text = respText($input.first());\nconst src = genSource();\nconst out = looseJson(text);\nif (out && typeof out.html === 'string') {\n  const notes = (out.executor_notes && out.executor_notes.length)\n    ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- '))\n    : 'Замечаний нет.';\n  const b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\n  return [{ json: { executor_notes: notes, from: src.from, subject: src.subject, messageId: src.messageId, gen_ok: true },\n    binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n}\nconst truncated = looksTruncated(text);\nconst why = truncated\n  ? 'Ответ модели оборван на середине (проверьте finish_reason и tokenUsage в узле Re-generate).'\n  : 'Ответ модели не содержит разбираемого JSON.';\nconst html = '<p>Не удалось собрать записку: ' + why + '</p><pre>' + String(text).slice(0, 4000) + '</pre>';\nconst b64 = Buffer.from(html, 'utf8').toString('base64');\nreturn [{ json: { executor_notes: 'Требует внимания:\\n- ' + why + ' Повторная генерация тоже не удалась — запустите письмо ещё раз.',\n  from: src.from, subject: src.subject, messageId: src.messageId, gen_ok: false },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000060",
+      "name": "Parse Output 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1a2b3c4-0000-4000-8000-000000000061",
+              "leftValue": "={{ $json.gen_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000062",
+      "name": "Gen OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2350,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Повторная генерация: предыдущий ответ не удалось разобрать ({{ $json.gen_fail_reason }}). Сгенерируй пояснительную записку заново по структуре и контракту (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}. Ответ должен начинаться с { и заканчиваться } — без markdown и текста вокруг. Выведи JSON целиком, не обрывая.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.generation_system }}"
+            }
+          ]
+        }
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000063",
+      "name": "Re-generate",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        2350,
+        400
+      ]
     }
   ],
   "connections": {
@@ -1139,7 +1205,7 @@
       "main": [
         [
           {
-            "node": "Write HTML",
+            "node": "Gen OK?",
             "type": "main",
             "index": 0
           }
@@ -1249,6 +1315,11 @@
           },
           {
             "node": "Generation Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Re-generate",
             "type": "ai_languageModel",
             "index": 0
           }
@@ -1366,6 +1437,46 @@
         [
           {
             "node": "Fetch Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gen OK?": {
+      "main": [
+        [
+          {
+            "node": "Write HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Re-generate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-generate": {
+      "main": [
+        [
+          {
+            "node": "Parse Output 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Output 2": {
+      "main": [
+        [
+          {
+            "node": "Write HTML",
             "type": "main",
             "index": 0
           }
