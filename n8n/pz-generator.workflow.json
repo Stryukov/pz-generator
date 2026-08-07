@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), OpenAI-совместимый ключ routerai (узел «Router AI (OpenAI)», Base URL https://routerai.ru/v1); Ollama — опционально.\n3. Модели: подключён «Router AI (OpenAI)» (claude-sonnet-5, temp 0, Responses API OFF). «Gemma (Ollama)» отвязана — запасной локальный вариант, переключение = перекинуть связь ai_languageModel.\n4. Узел «HTML→DOCX»: указать свой конвертер (для self-hosted — Gotenberg). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.\n\nРасчёт (PDF; в будущем xlsx) не передаётся модели документом — узел «PDF to Text» (poppler pdftotext) извлекает текст, он и уходит в промпт (Gemma — текстовая модель).",
+        "content": "## pz-generator — генерация пояснительных записок\n\n**Настроить перед запуском:**\n1. Config: docs_base_url (raw-ссылка на /docs репозитория), self_email, subject_tag.\n2. Креды: IMAP (входящая почта), SMTP (ответы), OpenAI-совместимый ключ routerai (узел «Router AI (OpenAI)», Base URL https://routerai.ru/v1); Ollama — опционально.\n3. Модели: подключён «Router AI (OpenAI)» (claude-sonnet-5, temp 0, Responses API OFF). «Gemma (Ollama)» отвязана — запасной локальный вариант, переключение = перекинуть связь ai_languageModel.\n4. Узел «HTML→DOCX»: указать свой конвертер (для self-hosted — Gotenberg). По умолчанию отключён — тогда записка вложится как HTML.\n\n**Логика:** контракты и структура НЕ хранятся во флоу — узел «Load Contracts» тянет их из репозитория по docs_base_url. Правите .md в git → флоу подхватывает новые версии, сам флоу не меняется.\n\nРасчёт (PDF; в будущем xlsx) не передаётся модели документом — узлы «PDF to Text» (poppler pdftotext) и «XLSX to CSV» (xlsx2csv) извлекают текст, он и уходит в промпт (Gemma — текстовая модель).",
         "height": 420,
         "width": 480,
         "color": 4
@@ -139,7 +139,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Разбор вложений: выбираем PDF-расчёт под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst pdfs = keys.filter(isPdf);\nconst candidates = pdfs.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// предпочитаем «расчёт задолженности»; иначе первый не-исключённый PDF\nconst preferred = candidates.find(k => lower(k).includes('расч') && lower(k).includes('задолж'));\nconst calcKey = preferred || candidates[0] || null;\n// выбранный расчёт кладём под стабильный ключ `calc` (его пишет на диск Write Calc PDF)\nconst outBin = {};\nlet calc_name = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: (j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || (typeof j.from === 'string' ? j.from : ''),\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
+        "jsCode": "// Разбор вложений: выбираем файл расчёта (PDF или XLSX) под ключ `calc`, прочее — в доп-контекст.\nconst item = $input.first();\nconst bin = item.binary || {};\nconst keys = Object.keys(bin);\nconst nameOf = (k) => (bin[k].fileName || k);\nconst lower = (k) => nameOf(k).toLowerCase();\nconst isPdf = (k) => (bin[k].mimeType||'').includes('pdf') || lower(k).endsWith('.pdf');\nconst isXlsx = (k) => (bin[k].mimeType||'').includes('spreadsheetml') || lower(k).endsWith('.xlsx');\n// исключаем явно не-расчёты по имени файла\nconst EXCLUDE = ['пени','платеж','платёж','поручени','пояснительн','реестр','показан'];\nconst files = keys.filter(k => isPdf(k) || isXlsx(k));\nconst candidates = files.filter(k => !EXCLUDE.some(w => lower(k).includes(w)));\n// приоритет: код биллинг-выгрузки (V_RP_PKV_DBT_REP_UL_NACH_PAY-N) или «расчёт задолженности»\nconst preferred = candidates.find(k => lower(k).includes('dbt_rep_ul_nach_pay') || (lower(k).includes('расч') && lower(k).includes('задолж')));\nconst calcKey = preferred || candidates[0] || null;\nconst outBin = {};\nlet calc_name = null, calc_type = null;\nif (calcKey) { outBin.calc = bin[calcKey]; calc_name = nameOf(calcKey); calc_type = isXlsx(calcKey) ? 'xlsx' : 'pdf'; }\nconst extras = keys.filter(k => k !== calcKey).map(nameOf);\nconst j = item.json;\nreturn [{ json: {\n  has_calc: !!calcKey,\n  calc_name, calc_type,\n  dop_context: (j.text || j.textPlain || '') + (extras.length ? ('\\n[вложения: ' + extras.join(', ') + ']') : ''),\n  subject: j.subject || '',\n  from: (j.from && j.from.value && j.from.value[0] && j.from.value[0].address) || (typeof j.from === 'string' ? j.from : ''),\n  messageId: j.messageId || (j.headers && j.headers['message-id']) || '',\n  retry: 0\n}, binary: outBin }];\n"
       },
       "id": "9f7efaad-8880-47de-97d5-26c5293f23e1",
       "name": "Prepare Inputs",
@@ -211,14 +211,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner n8n, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data + sep + '# Шаблон сборки (болванки дословно, шаблоны блоков)\\n' + $('Fetch Template').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
+        "jsCode": "// Склейка системных промптов из ответов HTTP-узлов. Сеть НЕ трогаем: helpers.httpRequest\n// в Code-узле виснет в task-runner, поэтому контракты качают отдельные HTTP Request-узлы.\nconst sep = '\\n\\n---\\n\\n';\nconst j = $('Prepare Inputs').first().json;\nconst d = $('Detect Type').first().json;\nj.doc_type = d.doc_type;\nj.doc_type_matched = d.doc_type_matched;\nj.extraction_system = $('Fetch Extraction').first().json.data + sep + $('Fetch Columns').first().json.data + sep + $('Fetch Schema').first().json.data;\nj.generation_system = $('Fetch Spec').first().json.data + sep + $('Fetch Generation').first().json.data + sep + '# Шаблон сборки (болванки дословно, шаблоны блоков)\\n' + $('Fetch Template').first().json.data;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "38a2e3ac-10d3-49e4-8ed0-a3ef5da34aec",
       "name": "Load Contracts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        900,
+        1920,
         260
       ]
     },
@@ -241,8 +241,8 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        540,
-        160
+        1490,
+        170
       ]
     },
     {
@@ -264,13 +264,13 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        660,
-        160
+        1770,
+        170
       ]
     },
     {
       "parameters": {
-        "url": "={{ $('Config').item.json.docs_base_url }}/04-spec-type-A.md",
+        "url": "={{ $('Config').item.json.docs_base_url }}/{{ $('Detect Type').item.json.spec_file }}",
         "options": {
           "response": {
             "response": {
@@ -287,8 +287,8 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        780,
-        160
+        1490,
+        360
       ]
     },
     {
@@ -310,13 +310,13 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        780,
+        1630,
         360
       ]
     },
     {
       "parameters": {
-        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/document-template-type-A.json",
+        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/{{ $('Detect Type').item.json.template_file }}",
         "options": {
           "response": {
             "response": {
@@ -333,7 +333,7 @@
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "position": [
-        660,
+        1770,
         360
       ]
     },
@@ -365,7 +365,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений.\n\nРасчёт:\n{{ $('PDF to Text').item.json.stdout }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "text": "=Извлеки данные из расчёта и доп-контекста в структуру манифеста согласно контракту и схеме (в system). Верни ТОЛЬКО JSON манифеста, без пояснений. Ответ должен начинаться с { и заканчиваться } — без рассуждений, пояснений, заголовков и markdown до или после. Рассуждай про себя, в ответ выводи только JSON.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
         "messages": {
           "messageValues": [
             {
@@ -379,13 +379,13 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.5,
       "position": [
-        980,
+        2080,
         260
       ]
     },
     {
       "parameters": {
-        "jsCode": "// Достаём JSON манифеста из ответа модели (Basic LLM Chain → .text)\nconst resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet manifest;\ntry { manifest = JSON.parse(text); } catch(e) { manifest = { _parse_error: e.message, _raw: text }; }\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
+        "jsCode": "// Достаём JSON манифеста из ответа модели (Basic LLM Chain -> .text)\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\nconst resp = $input.first().json;\nconst text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\nlet manifest = looseJson(text);\nif (!manifest) {\n  manifest = { _parse_error: 'ответ не содержит разбираемого JSON', _raw: String(text).slice(0, 2000) };\n}\nconst carry = $('Load Contracts').first().json;\nreturn [{ json: { manifest, generation_system: carry.generation_system,\n  from: carry.from, subject: carry.subject, messageId: carry.messageId, calc_name: carry.calc_name },\n  binary: $('Prepare Inputs').first().binary }];\n"
       },
       "id": "1bd34394-e951-4aa6-8c24-a6c31f36d9f5",
       "name": "Parse Manifest",
@@ -398,7 +398,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\nconst det = $('Detect Type').first().json;\nif (det.doc_type_matched === false) {\n  fails.push('тип: расчёт не опознан ни одним правилом types.json — применён default \"' + det.doc_type + '\"; проверьте, поддержан ли этот формат');\n} else if (m && m.doc_type && m.doc_type !== det.doc_type) {\n  fails.push('тип: детекция дала \"' + det.doc_type + '\", извлечение указало \"' + m.doc_type + '\" — карта колонок могла не совпасть с расчётом');\n}\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
       },
       "id": "e970f526-b13a-4383-a5ea-a13201450d79",
       "name": "Validate",
@@ -444,7 +444,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста.\n\nРасчёт:\n{{ $('PDF to Text').item.json.stdout }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
+        "text": "=Повторное извлечение. Предыдущий манифест не прошёл валидацию по проверкам: {{ JSON.stringify($json.fails) }}. Исправь соответствующие поля, перечитав расчёт внимательно. Верни ТОЛЬКО JSON манифеста. Ответ должен начинаться с { и заканчиваться } — без рассуждений, пояснений, заголовков и markdown до или после. Рассуждай про себя, в ответ выводи только JSON.\n\nРасчёт:\n{{ $('Calc Text').item.json.calc_text }}\n\nДоп-контекст:\n{{ $('Load Contracts').item.json.dop_context }}",
         "messages": {
           "messageValues": [
             {
@@ -477,7 +477,7 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => em.month >= x.date_from.slice(0,7) && em.month <= x.date_to.slice(0,7));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
+        "jsCode": "\nconst eq = (a, b, tol) => Math.abs(a - b) <= tol;\nconst r2 = (x) => Math.round(x * 100) / 100;\nconst T = { line: 0.05, sum: 1.0, k: 0.01 };\nconst m = $input.first().json.manifest;\nconst fails = [];\nconst det = $('Detect Type').first().json;\nif (det.doc_type_matched === false) {\n  fails.push('тип: расчёт не опознан ни одним правилом types.json — применён default \"' + det.doc_type + '\"; проверьте, поддержан ли этот формат');\n} else if (m && m.doc_type && m.doc_type !== det.doc_type) {\n  fails.push('тип: детекция дала \"' + det.doc_type + '\", извлечение указало \"' + m.doc_type + '\" — карта колонок могла не совпасть с расчётом');\n}\ntry {\n  if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error('нет months[]');\n  if (!m.example_month) throw new Error('нет example_month');\n  const em = m.months.find(x => x.month === m.example_month);\n  if (!em) throw new Error('example_month отсутствует в months');\n  const f = m.flags || {};\n  const t = (m.tariffs || []).find(x => x.date_from && em.month >= x.date_from.slice(0,7) && (!x.date_to || em.month <= x.date_to.slice(0,7)));\n  if (!t) { fails.push('schema: не найден тарифный интервал для месяца ' + em.month + ' — проверь tariffs[].date_from/date_to'); }\n  else {\n    const mult = t.nds === 'without' ? 1.2 : 1.0; // суммы в манифесте — с НДС\n    const expHvs = r2(em.V_hvs * t.tariff_hvs * mult);\n    if (!eq(em.sum_hvs, expHvs, T.line)) {\n      let hint = '';\n      if (eq(em.sum_hvs, r2(em.V_hvs * t.tariff_hvs), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('1:ХВС — ожидалось ' + expHvs + ' (V_hvs ' + em.V_hvs + ' × тариф ' + t.tariff_hvs + ' × 1,2), получено ' + em.sum_hvs + hint);\n    }\n    const expSt = r2(em.V_stoki * t.tariff_vo * mult);\n    if (!eq(em.sum_stoki, expSt, T.line)) {\n      let hint = '';\n      if (eq(em.sum_stoki, r2(em.V_stoki * t.tariff_vo), T.line)) hint = ' — похоже, сумма взята из колонки БЕЗ НДС; возьми итоговую колонку «с НДС» (без НДС × 1,2)';\n      fails.push('3:стоки — ожидалось ' + expSt + ' (V_stoki ' + em.V_stoki + ' × тариф ' + t.tariff_vo + ' × 1,2), получено ' + em.sum_stoki + hint);\n    }\n  }\n  if (f.has_nvcs) {\n    const expN = r2(em.sum_stoki * f.k_coefficient);\n    if (!eq(em.sum_nvcs, expN, T.line)) fails.push('4:НВЦС — ожидалось ' + expN + ' (sum_stoki ' + em.sum_stoki + ' × K ' + f.k_coefficient + '), получено ' + em.sum_nvcs);\n    if (!eq(f.k_coefficient, 0.5, T.k) && !eq(f.k_coefficient, 2.5, T.k)) fails.push('4:K — нетипичный коэффициент ' + f.k_coefficient + ' (ожидается 0,5 или 2,5); K = sum_nvcs / sum_stoki');\n  }\n  if (f.has_p203 && em.sum_p203 == null) fails.push('5:п203 — has_p203=true, но sum_p203 пуст: возьми итоговую колонку п.203 «с НДС»');\n  const comp = r2(em.sum_hvs + em.sum_stoki + (f.has_nvcs ? em.sum_nvcs : 0) + (f.has_p203 ? (em.sum_p203 || 0) : 0));\n  if (!eq(em.month_total, comp, T.line)) fails.push('6:итог_месяца — ожидалось ' + comp + ' (сумма слагаемых: ХВС ' + em.sum_hvs + ' + стоки ' + em.sum_stoki + (f.has_nvcs ? ' + НВЦС ' + em.sum_nvcs : '') + (f.has_p203 ? ' + п203 ' + em.sum_p203 : '') + '), получено ' + em.month_total + ' — если не сходится, строки взяты не из тех колонок (без НДС vs с НДС)');\n  const sm = r2(m.months.reduce((s, x) => s + x.month_total, 0));\n  if (!eq(m.totals.charged, sm, T.sum)) fails.push('7:начислено — ожидалось ' + sm + ' (сумма month_total всех месяцев), получено ' + m.totals.charged);\n  if (!eq(m.totals.balance, m.totals.charged - m.totals.paid, T.sum)) fails.push('8:остаток — ожидалось ' + r2(m.totals.charged - m.totals.paid) + ' (charged − paid), получено ' + m.totals.balance);\n} catch(e) { fails.push('schema:' + e.message); }\nconst j = $input.first().json;\nj.passed = fails.length === 0;\nj.fails = fails;\nreturn [{ json: j, binary: $input.first().binary }];\n"
       },
       "id": "b63e1d18-35fe-4f04-9ba0-f11a60b50d48",
       "name": "Validate 2",
@@ -504,7 +504,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
+        "text": "=Сгенерируй пояснительную записку по структуре и в соответствии с контрактом (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}. Ответ должен начинаться с { и заканчиваться } — без рассуждений, пояснений, заголовков и markdown до или после. Рассуждай про себя, в ответ выводи только JSON.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
         "messages": {
           "messageValues": [
             {
@@ -524,7 +524,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const resp = $input.first().json;\nlet text = typeof resp.text === 'string' ? resp.text : (resp.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\ntext = text.replace(/```json|```/g, '').trim();\nlet out; try { out = JSON.parse(text); } catch(e){ out = { html: '<p>Ошибка разбора ответа генератора.</p><pre>'+text+'</pre>', executor_notes: ['Проверьте ответ агента генерации'] }; }\n// from/subject/messageId берём из Parse Manifest (в выходе модели их нет)\nconst carry = $('Parse Manifest').first().json;\nconst notes = (out.executor_notes && out.executor_notes.length) ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- ')) : 'Замечаний нет.';\n// записка -> бинарный HTML-файл (по умолчанию вложение; при конвертере станет DOCX)\nconst b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\nreturn [{ json: { executor_notes: notes, from: carry.from, subject: carry.subject, messageId: carry.messageId },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+        "jsCode": "// Разбор ответа генерации. Не разобралось -> gen_ok=false, дальше узел Gen OK? шлёт на ретрай.\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n// Обрыв (есть открывающая скобка, но нет закрывающей) отличаем от мусора —\n// причины разные, и подсказка исполнителю должна быть разной.\nfunction looksTruncated(raw) {\n  const t = String(raw == null ? '' : raw);\n  const first = t.indexOf('{');\n  return first !== -1 && t.lastIndexOf('}') < first;\n}\nfunction respText(item) {\n  const r = item.json;\n  return typeof r.text === 'string' ? r.text\n    : (r.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\n}\n// Источник манифеста: если сработала петля повтора извлечения — Mark Assumptions,\n// иначе Parse Manifest. Нужен ретраю генерации.\nfunction genSource() {\n  let s = null;\n  try { s = $('Mark Assumptions').first().json; } catch (e) {}\n  if (!s || !s.manifest) { try { s = $('Parse Manifest').first().json; } catch (e) {} }\n  return s || {};\n}\nconst text = respText($input.first());\nconst src = genSource();\nconst out = looseJson(text);\nif (out && typeof out.html === 'string') {\n  const notes = (out.executor_notes && out.executor_notes.length)\n    ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- '))\n    : 'Замечаний нет.';\n  const b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\n  return [{ json: { executor_notes: notes, from: src.from, subject: src.subject, messageId: src.messageId, gen_ok: true },\n    binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n}\n// не разобралось — отдаём причину и данные для повторной генерации\nreturn [{ json: { gen_ok: false,\n  gen_fail_reason: looksTruncated(text) ? 'ответ оборван' : 'ответ не содержит JSON',\n  gen_raw: String(text).slice(0, 2000),\n  manifest: src.manifest, generation_system: src.generation_system,\n  from: src.from, subject: src.subject, messageId: src.messageId } }];\n"
       },
       "id": "ee803ca7-20f1-4493-8491-3391692f0e71",
       "name": "Parse Output",
@@ -588,8 +588,8 @@
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1.1,
       "position": [
-        720,
-        260
+        590,
+        180
       ]
     },
     {
@@ -601,8 +601,8 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        900,
-        260
+        740,
+        180
       ]
     },
     {
@@ -614,8 +614,8 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        1080,
-        260
+        890,
+        180
       ]
     },
     {
@@ -741,6 +741,217 @@
         2540,
         320
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1a2b3c4-0000-4000-8000-000000000040",
+              "leftValue": "={{ $json.calc_type }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000041",
+      "name": "Calc Type?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Унифицируем текст расчёта: PDF (pdftotext) ИЛИ XLSX (xlsx2csv) — обе ветки дают stdout\nlet calc_text = '';\ntry { const s = $('PDF to Text').first().json.stdout; if (s) calc_text = s; } catch (e) {}\nif (!calc_text) { try { const s = $('XLSX to CSV').first().json.stdout; if (s) calc_text = s; } catch (e) {} }\nreturn [{ json: { calc_text } }];\n"
+      },
+      "id": "a1b2c3d4-0000-4000-8000-000000000044",
+      "name": "Calc Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/tmp/{{ $execution.id }}.xlsx",
+        "dataPropertyName": "calc",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        590,
+        380
+      ],
+      "id": "b2c3d4e5-0000-4000-8000-000000000040",
+      "name": "Write Calc XLSX"
+    },
+    {
+      "parameters": {
+        "command": "=xlsx2csv /tmp/{{ $execution.id }}.xlsx"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        740,
+        380
+      ],
+      "id": "b2c3d4e5-0000-4000-8000-000000000041",
+      "name": "XLSX to CSV"
+    },
+    {
+      "parameters": {
+        "command": "=rm -f /tmp/{{ $execution.id }}.xlsx"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        890,
+        380
+      ],
+      "id": "b2c3d4e5-0000-4000-8000-000000000042",
+      "name": "Cleanup XLSX"
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "url": "={{ $('Config').item.json.docs_base_url.replace('/docs','/templates') }}/types.json"
+      },
+      "id": "e1a10010-0000-4000-8000-000000000010",
+      "name": "Fetch Types",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "position": [
+        1190,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Определение типа расчёта по таблице templates/types.json (узел Fetch Types).\n// Сеть НЕ трогаем: helpers.httpRequest в Code-узле виснет в task-runner n8n.\nconst raw = $('Fetch Types').first().json.data;\nconst table = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst pi = $('Prepare Inputs').first().json;\nconst text = String($('Calc Text').first().json.calc_text || '').toLowerCase();\nconst fname = String(pi.calc_name || '').toLowerCase();\nconst ctype = pi.calc_type || '';\nconst has = (s) => text.indexOf(String(s).toLowerCase()) !== -1;\nconst inName = (s) => fname.indexOf(String(s).toLowerCase()) !== -1;\nconst arr = (x) => Array.isArray(x) ? x : [];\nfunction ok(m) {\n  if (!m) return true;\n  if (m.calc_type && m.calc_type !== ctype) return false;\n  if (arr(m.filename_contains).length && !arr(m.filename_contains).some(inName)) return false;\n  if (arr(m.text_all).length && !arr(m.text_all).every(has)) return false;\n  if (arr(m.text_any).length && !arr(m.text_any).some(has)) return false;\n  if (arr(m.text_none).some(has)) return false;\n  return true;\n}\nconst types = arr(table.types);\nlet hit = types.find((t) => ok(t.match));\nconst matched = Boolean(hit);\nif (!hit) { hit = types.find((t) => t.id === table.default); }\nif (!hit) { throw new Error('Detect Type: тип не определён, и default отсутствует в types.json'); }\nconst j = $('Prepare Inputs').first().json;\nj.doc_type = hit.id;\nj.doc_type_title = hit.title || hit.id;\nj.doc_type_matched = matched;\nj.columns_file = hit.columns;\nj.spec_file = hit.spec;\nj.template_file = hit.template;\nreturn [{ json: j, binary: $('Prepare Inputs').first().binary }];\n"
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000050",
+      "name": "Detect Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        },
+        "url": "={{ $('Config').item.json.docs_base_url }}/{{ $('Detect Type').item.json.columns_file }}"
+      },
+      "id": "e1a10011-0000-4000-8000-000000000011",
+      "name": "Fetch Columns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "position": [
+        1630,
+        170
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Разбор ответа повторной генерации. Здесь фоллбэк уже финальный.\n// Толерантный разбор: модель иногда обрамляет JSON рассуждением до/после.\nfunction looseJson(raw) {\n  let t = String(raw == null ? '' : raw).replace(/```json|```/gi, '').trim();\n  try { return JSON.parse(t); } catch (e) {}\n  const first = t.indexOf('{');\n  const last = t.lastIndexOf('}');\n  if (first !== -1 && last > first) {\n    try { return JSON.parse(t.slice(first, last + 1)); } catch (e) {}\n  }\n  return null;\n}\n// Обрыв (есть открывающая скобка, но нет закрывающей) отличаем от мусора —\n// причины разные, и подсказка исполнителю должна быть разной.\nfunction looksTruncated(raw) {\n  const t = String(raw == null ? '' : raw);\n  const first = t.indexOf('{');\n  return first !== -1 && t.lastIndexOf('}') < first;\n}\nfunction respText(item) {\n  const r = item.json;\n  return typeof r.text === 'string' ? r.text\n    : (r.content || []).map(c => c.type === 'text' ? c.text : '').join('\\n');\n}\n// Источник манифеста: если сработала петля повтора извлечения — Mark Assumptions,\n// иначе Parse Manifest. Нужен ретраю генерации.\nfunction genSource() {\n  let s = null;\n  try { s = $('Mark Assumptions').first().json; } catch (e) {}\n  if (!s || !s.manifest) { try { s = $('Parse Manifest').first().json; } catch (e) {} }\n  return s || {};\n}\nconst text = respText($input.first());\nconst src = genSource();\nconst out = looseJson(text);\nif (out && typeof out.html === 'string') {\n  const notes = (out.executor_notes && out.executor_notes.length)\n    ? ('Требует внимания:\\n- ' + out.executor_notes.join('\\n- '))\n    : 'Замечаний нет.';\n  const b64 = Buffer.from(out.html || '', 'utf8').toString('base64');\n  return [{ json: { executor_notes: notes, from: src.from, subject: src.subject, messageId: src.messageId, gen_ok: true },\n    binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n}\nconst truncated = looksTruncated(text);\nconst why = truncated\n  ? 'Ответ модели оборван на середине (проверьте finish_reason и tokenUsage в узле Re-generate).'\n  : 'Ответ модели не содержит разбираемого JSON.';\nconst html = '<p>Не удалось собрать записку: ' + why + '</p><pre>' + String(text).slice(0, 4000) + '</pre>';\nconst b64 = Buffer.from(html, 'utf8').toString('base64');\nreturn [{ json: { executor_notes: 'Требует внимания:\\n- ' + why + ' Повторная генерация тоже не удалась — запустите письмо ещё раз.',\n  from: src.from, subject: src.subject, messageId: src.messageId, gen_ok: false },\n  binary: { zapiska: { data: b64, mimeType: 'text/html', fileName: 'poyasnitelnaya_zapiska.html' } } }];\n"
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000060",
+      "name": "Parse Output 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2520,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1a2b3c4-0000-4000-8000-000000000061",
+              "leftValue": "={{ $json.gen_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000062",
+      "name": "Gen OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2350,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Повторная генерация: предыдущий ответ не удалось разобрать ({{ $json.gen_fail_reason }}). Сгенерируй пояснительную записку заново по структуре и контракту (в system) из данных манифеста ниже. Верни ТОЛЬКО JSON: {\"html\": \"<записка в HTML>\", \"executor_notes\": [\"...\"]}. Ответ должен начинаться с { и заканчиваться } — без markdown и текста вокруг. Выведи JSON целиком, не обрывая.\n\nМанифест:\n{{ JSON.stringify($json.manifest) }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "={{ $json.generation_system }}"
+            }
+          ]
+        }
+      },
+      "id": "c1a2b3c4-0000-4000-8000-000000000063",
+      "name": "Re-generate",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [
+        2350,
+        400
+      ]
     }
   ],
   "connections": {
@@ -799,7 +1010,7 @@
       "main": [
         [
           {
-            "node": "Fetch Extraction",
+            "node": "Calc Type?",
             "type": "main",
             "index": 0
           }
@@ -817,7 +1028,7 @@
       "main": [
         [
           {
-            "node": "Fetch Schema",
+            "node": "Fetch Columns",
             "type": "main",
             "index": 0
           }
@@ -872,7 +1083,7 @@
       "main": [
         [
           {
-            "node": "Write Calc PDF",
+            "node": "Extraction Agent",
             "type": "main",
             "index": 0
           }
@@ -994,7 +1205,7 @@
       "main": [
         [
           {
-            "node": "Write HTML",
+            "node": "Gen OK?",
             "type": "main",
             "index": 0
           }
@@ -1038,7 +1249,7 @@
       "main": [
         [
           {
-            "node": "Extraction Agent",
+            "node": "Calc Text",
             "type": "main",
             "index": 0
           }
@@ -1106,6 +1317,11 @@
             "node": "Generation Agent",
             "type": "ai_languageModel",
             "index": 0
+          },
+          {
+            "node": "Re-generate",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
@@ -1126,6 +1342,141 @@
         [
           {
             "node": "HTML to DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calc Type?": {
+      "main": [
+        [
+          {
+            "node": "Write Calc PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Write Calc XLSX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calc Text": {
+      "main": [
+        [
+          {
+            "node": "Fetch Types",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Calc XLSX": {
+      "main": [
+        [
+          {
+            "node": "XLSX to CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XLSX to CSV": {
+      "main": [
+        [
+          {
+            "node": "Cleanup XLSX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup XLSX": {
+      "main": [
+        [
+          {
+            "node": "Calc Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Types": {
+      "main": [
+        [
+          {
+            "node": "Detect Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Type": {
+      "main": [
+        [
+          {
+            "node": "Fetch Extraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Columns": {
+      "main": [
+        [
+          {
+            "node": "Fetch Schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gen OK?": {
+      "main": [
+        [
+          {
+            "node": "Write HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Re-generate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-generate": {
+      "main": [
+        [
+          {
+            "node": "Parse Output 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Output 2": {
+      "main": [
+        [
+          {
+            "node": "Write HTML",
             "type": "main",
             "index": 0
           }

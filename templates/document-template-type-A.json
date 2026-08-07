@@ -82,6 +82,7 @@
   "placeholders": {
     "abonent_name": "<code class=\"ph\" style=\"color:#c0392b\">&lt;название абонента&gt;</code>",
     "contract": "<code class=\"ph\" style=\"color:#c0392b\">&lt;№ и дата договора&gt;</code>",
+    "meter_no": "<code class=\"ph\" style=\"color:#c0392b\">&lt;№ прибора учёта&gt;</code>",
     "poverka_date": "<code class=\"ph\" style=\"color:#c0392b\">&lt;дата поверки&gt;</code>",
     "normativ_npa": "<code class=\"ph\" style=\"color:#c0392b\">&lt;укажите НПА по нормативу&gt;</code>",
     "tariff_npa": "<code class=\"ph\" style=\"color:#c0392b\">&lt;НПА по тарифу&gt;</code>",
@@ -101,33 +102,32 @@
       "required": true,
       "variants": {
         "pu": {
-          "text": "Расчёт стоимости потреблённых коммунальных услуг ХВС и ВО произведён по приборам учёта{recalc_clause}.",
-          "pu_table": {
-            "always": true,
-            "columns": [
-              "№",
-              "Объект",
-              "№ прибора учёта",
-              "дата поверки"
-            ]
-          }
+          "text": "Расчёт стоимости потреблённых коммунальных услуг ХВС и ВО произведён по приборам учёта{recalc_clause}."
         },
         "norm": {
           "text": "Начисления выполнены на основании нормативов, утверждённых {normativ_npa}, в размере {norm_volume} м³ в месяц."
         }
       },
       "recalc_clause_if": "is_recalc",
-      "recalc_clause_text": " повторно в связи с поверкой"
-    },
-    {
-      "id": 2,
-      "name": "objects",
-      "required": true,
-      "deletable_by_user": true,
-      "template": "На объекте по адресу: {address} располагается {purpose}[, по адресу: {address2} располагается {purpose2}]…",
-      "note": "служебное: удаляемость блока НЕ выводить в текст документа; напоминание — только в executor_notes",
-      "source": "executor_context.objects (список объектов)",
-      "rule": "перебрать objects; нет purpose → плейсхолдер; согласовать «располагается/располагаются»; весь блок — один удаляемый абзац"
+      "recalc_clause_text": " повторно в связи с поверкой",
+      "objects_table": {
+        "always": true,
+        "columns": [
+          "№",
+          "Объект",
+          "Назначение",
+          "Прибор учёта",
+          "Дата поверки"
+        ],
+        "source": "pu_list + executor_context.objects (сопоставление по адресу)",
+        "rules": [
+          "по строке на объект; нумерация сквозная",
+          "Назначение — из executor_context.objects[].purpose; нет → плейсхолдер {object_purpose}",
+          "Прибор учёта / Дата поверки — из pu_list; нет → плейсхолдеры {meter_no} / {poverka_date}",
+          "однотипные пропуски по всем строкам сводить в ОДИН комментарий исполнителю"
+        ],
+        "replaces": "прежнюю ПУ-таблицу и отдельный абзац о назначении объекта"
+      }
     },
     {
       "id": 3,
@@ -249,5 +249,6 @@
     8,
     9,
     10
-  ]
+  ],
+  "_comment": "Тип А. Блок 2 (назначение объектов) удалён: назначение выводится колонкой единой таблицы объектов в блоке 1. Нумерация остальных блоков сохранена."
 }
