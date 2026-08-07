@@ -13,6 +13,16 @@
 > выводится из `V_hvs` (бывшая проверка 2 убрана). Нет `months`/`tariffs`/`example_month`
 > или тарифа под месяц → `schema:*` (понятная обратная связь петле, а не краш).
 
+## Проверка типа расчёта (до всех числовых)
+0. Тип определяется **до извлечения** (узел `Detect Type` по `templates/types.json`) и
+   подтверждается извлечением в `manifest.doc_type`. Два случая — fail:
+   - `doc_type_matched === false` — ни одно правило не сработало, применён `default`. Значит
+     формат, скорее всего, ещё не поддержан (напр. УК или Пустующие) и карта колонок не та.
+   - `manifest.doc_type ≠ det.doc_type` — извлечение увидело в расчёте другой тип, чем детекция.
+
+   Обе ситуации ловятся **до генерации** — это страховка от молчаливой сборки записки не по
+   тому шаблону.
+
 ## Проверки по `example_month`
 1. `sum_hvs ≈ V_hvs × tariff_hvs × nds_mult`
 3. `sum_stoki ≈ V_stoki × tariff_vo × nds_mult`
@@ -48,6 +58,13 @@ const r2 = (x) => Math.round(x * 100) / 100;
 const T = { line: 0.05, sum: 1.0, k: 0.01 };
 const m = manifest;
 const fails = [];
+// 0. Сверка типа расчёта: detected — то, что определил Detect Type до извлечения.
+const det = $('Detect Type').first().json;
+if (det.doc_type_matched === false) {
+  fails.push('тип: расчёт не опознан ни одним правилом types.json — применён default "' + det.doc_type + '"; проверьте, поддержан ли этот формат');
+} else if (m && m.doc_type && m.doc_type !== det.doc_type) {
+  fails.push('тип: детекция дала "' + det.doc_type + '", извлечение указало "' + m.doc_type + '" — карта колонок могла не совпасть с расчётом');
+}
 try {
   if (!m || !Array.isArray(m.months) || !m.months.length) throw new Error("нет months[]");
   if (!m.example_month) throw new Error("нет example_month");
