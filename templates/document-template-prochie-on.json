@@ -55,9 +55,11 @@
       "id": 0,
       "name": "header",
       "required": true,
-      "template": "Пояснительная записка к расчету суммы задолженности за услуги водопотребления{vo_suffix} по абоненту {abonent_name}, договор № {contract_no} за период {period}.",
+      "template": "<h2>к расчету суммы задолженности за услуги водопотребления{vo_suffix} по абоненту {abonent_name}, договор № {contract_no} за период {period}.</h2>",
       "vo_suffix_if": "flags.has_vo",
-      "vo_suffix_text": " и водоотведения"
+      "vo_suffix_text": " и водоотведения",
+      "title": "<h1>Пояснительная записка</h1>",
+      "_markup_note": "Шапка — ДВА элемента: <h1> с одними словами «Пояснительная записка» и <h2> с подзаголовком. Одним абзацем не склеивать."
     },
     {
       "id": 1,
@@ -144,40 +146,42 @@
       "required": true,
       "intro": "{boilerplate.months_intro}",
       "per_month_template": {
-        "heading": "{month_name} {year} {basis_suffix}:",
+        "heading": "<h3>{month_name} {year} {basis_suffix}:</h3>",
         "basis_suffix": {
           "pu": "по ПУ",
           "norm": "по нормативу",
           "average": "по среднему в связи с отсутствием показаний"
         },
         "lines": [
-          "ХВС = ({V_hvs} м3 * {tariff_hvs} руб.) + 20% = {sum_hvs} руб.",
-          "ВО = ({V_stoki} м3 * {tariff_vo} руб.) + 20% = {sum_stoki} руб.   [только если has_vo]",
-          "НВЦС = {sum_stoki} * {k_coefficient} = {sum_nvcs} руб.   [только если has_nvcs]",
-          "п. 203 = {sum_p203} руб.   [только если has_p203]",
-          "Итого: {month_total} руб."
+          "<p>ХВС = ({V_hvs} м3 * {tariff_hvs} руб.) + 20% = {sum_hvs} руб.</p>",
+          "<p>ВО = ({V_stoki} м3 * {tariff_vo} руб.) + 20% = {sum_stoki} руб.</p>   [только если has_vo]",
+          "<p>НВЦС = {sum_stoki} * {k_coefficient} = {sum_nvcs} руб.</p>   [только если has_nvcs]",
+          "<p>п. 203 = {sum_p203} руб.</p>   [только если has_p203]",
+          "<p>Итого: {month_total} руб.</p>"
         ],
         "multi_object": {
           "when": "months[].objects[] заполнен (в месяце больше одного объекта)",
-          "heading": "{month_name} {year}:",
+          "heading": "<h3>{month_name} {year}:</h3>",
           "_heading_note": "основание расчёта в заголовок НЕ выносится — у объектов оно разное",
           "per_object": [
-            "{object} ({purpose}) — {basis_suffix}:",
-            "ХВС = ({V_hvs} м3 * {tariff_hvs} руб.) + 20% = {sum_hvs} руб.",
-            "ВО = ({V_stoki} м3 * {tariff_vo} руб.) + 20% = {sum_stoki} руб.   [только если has_vo]"
+            "<p>{object} ({purpose}) — {basis_suffix}:</p>",
+            "<p>ХВС = ({V_hvs} м3 * {tariff_hvs} руб.) + 20% = {sum_hvs} руб.</p>",
+            "<p>ВО = ({V_stoki} м3 * {tariff_vo} руб.) + 20% = {sum_stoki} руб.</p>   [только если has_vo]"
           ],
-          "tail": "Итого за {month_name} {year}: {month_total} руб.",
+          "tail": "<p>Итого за {month_name} {year}: {month_total} руб.</p>",
           "rules": [
             "суммы и основание берутся из months[].objects[], итог месяца — из month_total",
             "основание у объектов одного месяца может различаться — подписывать каждый отдельно",
-            "каждая строка — свой <p>"
+            "каждая строка — свой <p>; все строки месяца — внутри одного <blockquote>"
           ]
-        }
+        },
+        "lines_wrapper": "<blockquote> … </blockquote>"
       },
       "selection": "по одному месяцу на каждый различающийся вариант расчёта — manifest.example_months",
       "tail_if_not_all": "Расчет за остальные периоды произведен аналогичным способом.",
       "expand_all_if": "executor_context.expand_all_months",
-      "_single_object_note": "Один объект — формат прежний: основание в заголовке месяца («Апрель 2025 по ПУ:»)."
+      "_single_object_note": "Один объект — формат прежний: основание в заголовке месяца («Апрель 2025 по ПУ:»).",
+      "_markup_note": "Заголовок месяца — <h3> СНАРУЖИ <blockquote>, строки (включая «Итого») — внутри него. У каждого месяца свой <h3> и свой <blockquote>."
     },
     {
       "id": 8,
@@ -203,8 +207,8 @@
       "id": 10,
       "name": "signature",
       "required": true,
-      "template": "{ispolnitel_post} {ispolnitel_name} ________________",
-      "note": "формат «Должность ФИО ____», не «Исполнитель: ФИО, должность»"
+      "template": "<p>&nbsp;</p><p>{ispolnitel_post} {ispolnitel_name} ________________</p>",
+      "note": "формат «Должность ФИО ____», не «Исполнитель: ФИО, должность»; перед подписью — один пустой абзац для отбивки"
     }
   ],
   "order": [
@@ -219,5 +223,6 @@
     8,
     9,
     10
-  ]
+  ],
+  "_markup": "Разметка задаёт оформление (см. docs/05 §1): <h1>/<h2> — шапка, <p> — основной текст, <h3> — заголовок месяца, <blockquote> — строки расчёта, <table> — таблица. Начертание и выравнивание руками не задавать: <b>/<strong>/<center>/style у абзацев отбрасываются конвертером."
 }
